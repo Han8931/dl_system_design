@@ -1,0 +1,47 @@
+\chapter{Introduction}
+
+\section{Complexity of Matrix Multiplication}
+
+Matrix multiplication is a fundamental operation in many computational tasks, including neural networks. The complexity of multiplying two matrices depends on their dimensions. Let's dive into the specifics.
+
+\begin{itemize}
+	\item Let \(A\) be a matrix of size \(m \times k\).
+	\item Let \(B\) be a matrix of size \(k \times n\).
+	\item The result \(C\) will be a matrix of size \(m \times n\).
+\end{itemize}
+
+\paragraph{Standard Matrix Multiplication:} For each element \(c_{ij}\) in the resulting matrix \(C\):
+\[ c_{ij} = \sum_{l=1}^{k} a_{il} \cdot b_{lj} \]
+
+This involves:
+\begin{itemize}
+	\item Multiplications: \(k\) multiplications for each element \(c_{ij}\).
+	\item Additions: \(k-1\) additions for each element \(c_{ij}\).
+\end{itemize}
+
+\paragraph{Complexity}
+\begin{itemize}
+	\item The total number of elements in \(C\) is \(m \times n\).
+	\item Therefore, the total number of multiplications is \(m \times n \times k\).
+	\item The total number of additions is \(m \times n \times (k-1)\).
+\end{itemize}
+
+Thus, the total complexity is \(O(m \times n \times k)\).
+
+Even though there are several advanced methods, the standard \(O(m \times n \times k)\) complexity is often used in practice, due to the simplicity and efficiency of implementation on modern hardware. Optimized libraries (like BLAS, cuBLAS for GPUs) leverage hardware-specific optimizations to improve practical performance.
+
+\subsection{Complexity in Neural Networks}
+
+In the context of neural networks:
+\begin{itemize}
+	\item Input Matrices: Weight matrices and input feature vectors.
+	\item Typical Sizes:
+		\begin{itemize}
+			\item Weight matrix: \(d \times d_{in}\) for RNNs, \(d \times d\) for Transformers.
+			\item Input/Output vectors: Usually batch-processed, leading to sizes like \(batch\_size \times sequence\_length \times feature\_size\).
+		\end{itemize}
+\end{itemize}
+
+
+
+

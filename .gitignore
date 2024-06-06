@@ -1,0 +1,14 @@
+*.svg
+*.aux
+*.log
+*.bbl
+*.blg
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.gz
+
+.venv/
+Codes/
+material/
