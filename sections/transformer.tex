@@ -1,0 +1,13 @@
+\chapter{Transformers}
+
+\section{Positional Embeddings}
+\label{sec:transformer:posemb}
+
+Rather than focusing on a token's absolute position in a sentence, relative positional embeddings concentrate on the distances between pairs of tokens. This method doesn't add a position vector to the word vector directly. Instead, it alters the attention mechanism to incorporate relative positional information.
+
+\subsection{Rotary Positional Embeddings}
+RoPE represents a novel approach in encoding positional information. Traditional methods, either absolute or relative, come with their limitations. Absolute positional embeddings assign a unique vector to each position, which though straightforward, doesn't scale well and fails to capture relative positions effectively. Relative embeddings, on the other hand, focus on the distance between tokens, enhancing the model’s understanding of token relationships but complicating the model architecture.
+
+RoPE ingeniously combines the strengths of both. It encodes positional information in a way that allows the model to understand both the absolute position of tokens and their relative distances. This is achieved through a rotational mechanism, where each position in the sequence is represented by a rotation in the embedding space. The elegance of RoPE lies in its simplicity and efficiency, enabling models to better grasp the nuances of language syntax and semantics.
+
+RoPE introduces a novel concept. Instead of adding a positional vector, it applies a rotation to the word vector. Imagine a two-dimensional word vector for ``dog.'' To encode its position in a sentence, RoPE rotates this vector. The angle of rotation ($\theta$) is proportional to the word's position in the sentence. For instance, the vector is rotated by $\theta$ for the first position, $2\theta$ for the second, and so on. This approach has several benefits:
