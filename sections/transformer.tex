@@ -1,7 +1,196 @@
 \chapter{Attention}
 
+Both self-attention and multi-head attention perform similar core operations—projecting inputs into queries, keys, and values; computing dot products; and then combining information—but they do so in slightly different ways. Below, we break down the computational cost for each, using common notation, and then summarize the differences.
+
+---
+
+## Notation and Basic Costs
+
+Let:
+- \( n \) be the sequence length.
+- \( d \) be the hidden (feature) dimension of each token.
+- \( H \) be the number of heads (for multi-head attention).
+- \( d_k \) be the dimension of each head’s queries and keys. (Typically, \( d_k = d / H \).)
+
+Two main parts contribute to the computational cost:
+1. **Linear projections** that map the input to queries, keys, and values.
+2. **Attention score computations and weighted-sum operations** (dominated by matrix multiplications).
+
+---
+
+## 1. Self-Attention (Single-Head)
+
+### A. Linear Projections
+
+For an input \( X \) of shape \((n, d)\), we project it into three matrices:
+- \( Q = X W^Q \) with \( W^Q \in \mathbb{R}^{d \times d} \)
+- \( K = X W^K \) with \( W^K \in \mathbb{R}^{d \times d} \)
+- \( V = X W^V \) with \( W^V \in \mathbb{R}^{d \times d} \)
+
+The cost of each projection is roughly \( O(n \, d \, d) = O(n\, d^2) \). For three projections, the cost is
+\[
+O(3 \, n\, d^2) \quad \text{(or simply } O(n\, d^2) \text{ up to constants).}
+\]
+
+### B. Attention Score Computation
+
+The attention scores are computed as:
+\[
+\text{Scores} = \frac{QK^\top}{\sqrt{d}}.
+\]
+- \( Q \) is \( n \times d \) and \( K^\top \) is \( d \times n \), so the matrix multiplication costs \( O(n \, d \, n) = O(n^2\, d) \).
+
+### C. Softmax and Weighted Sum
+
+1. **Softmax over each row:**  
+   For each of the \( n \) rows (each of length \( n \)), the cost is \( O(n) \). Over all rows, that’s \( O(n^2) \).  
+2. **Weighted Sum:**  
+   Multiplying the resulting \( n \times n \) attention matrix with \( V \) (which is \( n \times d \)) also costs \( O(n^2\, d) \).
+
+### D. Total Cost (Self-Attention)
+
+Summing the costs:
+- Projections: \( O(n\, d^2) \)
+- Dot-product (score) computation: \( O(n^2\, d) \)
+- Softmax and weighted sum: \( O(n^2) + O(n^2\, d) \) (the \( O(n^2\, d) \) term dominates when \( d \) is not tiny)
+
+Thus, the total computational cost is:
+\[
+O(n\, d^2 + n^2\, d).
+\]
+
+For long sequences (large \( n \)), the \( O(n^2\, d) \) term (quadratic in \( n \)) is the dominant cost.
+
+---
+
+## 2. Multi-Head Attention
+
+Multi-head attention splits the hidden dimension into \( H \) parts and performs self-attention in parallel over these “heads.” Let’s analyze the cost per head and then sum over all heads.
+
+### A. Linear Projections
+
+For each head \( h \) (where \( h = 1, \dots, H \)), we project the input \( X \) into:
+- \( Q^{(h)} = X W_h^Q \) with \( W_h^Q \in \mathbb{R}^{d \times d_k} \)
+- \( K^{(h)} = X W_h^K \) with \( W_h^K \in \mathbb{R}^{d \times d_k} \)
+- \( V^{(h)} = X W_h^V \) with \( W_h^V \in \mathbb{R}^{d \times d_k} \)
+
+Each projection costs \( O(n \, d\, d_k) \). Since \( d_k = d / H \), the cost per projection per head is
+\[
+O\Big(n\, d\, \frac{d}{H}\Big) = O\Big(\frac{n\, d^2}{H}\Big).
+\]
+There are 3 projections per head, so per head cost is \( O(n\, d^2 / H) \). Summing over all \( H \) heads:
+\[
+O\Big(H \times \frac{n\, d^2}{H}\Big) = O(n\, d^2).
+\]
+
+### B. Attention Score Computation per Head
+
+For each head, the attention scores are computed as:
+\[
+\text{Scores}^{(h)} = \frac{Q^{(h)} \, (K^{(h)})^\top}{\sqrt{d_k}}.
+\]
+- \( Q^{(h)} \) is \( n \times d_k \) and \( (K^{(h)})^\top \) is \( d_k \times n \), costing \( O(n\, d_k\, n) = O(n^2\, d_k) \).
+
+Since \( d_k = d / H \), the cost per head is:
+\[
+O\Big(n^2 \frac{d}{H}\Big).
+\]
+Over all \( H \) heads, the total cost is:
+\[
+O\Big(H \times n^2\, \frac{d}{H}\Big) = O(n^2\, d).
+\]
+
+### C. Softmax and Weighted Sum (per head)
+
+For each head, applying softmax and computing the weighted sum with \( V^{(h)} \) also costs \( O(n^2) \) for softmax plus \( O(n^2\, d_k) \) for the weighted sum. Summing over all heads, the dominant cost remains
+\[
+O(n^2\, d),
+\]
+since the softmax operations over \( n \) tokens and \( H \) heads combine to a similar scale as in single-head attention.
+
+### D. Final Linear Projection
+
+After computing the attention outputs for all heads, they are concatenated (forming an \( n \times d \) matrix) and then passed through a final linear projection with cost \( O(n\, d^2) \).
+
+### E. Total Cost (Multi-Head Attention)
+
+Adding everything together:
+- Projections into heads: \( O(n\, d^2) \)
+- Per-head attention (scores, softmax, weighted sum): \( O(n^2\, d) \)
+- Final projection: \( O(n\, d^2) \)
+
+Thus, the overall computational cost is still:
+\[
+O(n\, d^2 + n^2\, d).
+\]
+
+---
+
+## Comparison and Key Points
+
+1. **Quadratic Cost in Sequence Length:**  
+   Both self-attention and multi-head attention have a term \( O(n^2\, d) \), which means that as the sequence length \( n \) increases, the cost grows quadratically. This is primarily due to the pairwise dot products between queries and keys.
+
+2. **Linear Projections Cost:**  
+   The cost for projecting inputs to queries, keys, and values is \( O(n\, d^2) \). This is common to both single-head and multi-head versions, although multi-head attention splits the projections among heads (but still sums up to the same overall cost).
+
+3. **Parallelization:**  
+   Multi-head attention can be parallelized over the \( H \) heads. In practice, this allows hardware (like GPUs) to compute all heads simultaneously, which may improve throughput even though the theoretical number of operations is similar.
+
+4. **Memory Considerations:**  
+   Both methods need to store an \( n \times n \) attention matrix (or \( H \) matrices of size \( n \times n \)), so memory usage also scales quadratically with \( n \).
+
+5. **Expressive Power vs. Cost:**  
+   While multi-head attention doesn’t reduce the asymptotic cost compared to single-head attention, it tends to improve model performance by allowing the model to attend to information from different representation subspaces.
+
+---
+
+## Summary
+
+- **Self-Attention:**  
+  Total cost is \( O(n\, d^2 + n^2\, d) \). The quadratic term \( O(n^2\, d) \) (from computing the \( n \times n \) attention scores) dominates for long sequences.
+
+- **Multi-Head Attention:**  
+  Despite splitting into \( H \) heads, the overall cost remains \( O(n\, d^2 + n^2\, d) \) because:
+  - Projections across heads still sum to \( O(n\, d^2) \).
+  - Each head computes \( O(n^2\, (d/H)) \) work, which summed over \( H \) heads gives \( O(n^2\, d) \).
+
+In both cases, the key computational bottleneck is the quadratic dependency on the sequence length \( n \), which has spurred research into more efficient attention mechanisms for very long sequences.
+
+
 \section{Multi-Head Attention}
 \label{sec:transformer:mha}
+
+In decoder‐only (autoregressive) models like those used in language generation, the self-attention mechanism must be computed sequentially during inference. This setup introduces a few key issues:
+\begin{enumerate}
+	\item Growing Computational Cost: During inference, the model generates tokens one by one. For each new token, the self-attention mechanism must consider all previously generated tokens. Concretely, if you have generated \( n \) tokens so far, computing self-attention at the next step involves calculating attention over an \( n \)-length sequence. Since the attention operation involves a dot-product between queries and all keys, its computational cost per new token is roughly proportional to \( O(n \cdot d) \) (ignoring the projection costs). Over a long sequence, this means the overall computation grows roughly quadratically with the sequence length \( n \).  
+		\begin{itemize}
+			\item Example: At time step 1 you compute attention over 1 token, at step 2 over 2 tokens, and so on. By the \( N \)th token, you’re performing operations over \( N \) tokens, leading to a total cost that scales as \( 1 + 2 + \dots + N \sim O(N^2) \).
+		\end{itemize}
+	\item Increasing Memory Footprint:  Each new token requires storing its associated key and value vectors. As the sequence length grows, the model must maintain larger and larger caches of these vectors. This can become a bottleneck in memory usage, especially for very long generated sequences.
+
+	\item Sequential Dependency and Latency:  Because each token depends on all the previous tokens (via the attention mechanism), you cannot generate multiple tokens in parallel. This inherently sequential process leads to higher latency during inference compared to training, where the full sequence is available and parallelized.
+	\item Mitigation via Caching:  
+   To reduce repeated computation, many implementations cache the computed keys and values from previous time steps. When generating a new token, the model reuses the cached keys and values rather than recomputing them. While this helps avoid redundant work, the attention computation still scales with the growing length of the cached sequence, and managing this cache can add complexity (both in terms of memory management and in ensuring efficient access).
+\end{enumerate}
+
+
+
+---
+
+### Summary
+
+- **Quadratic Complexity:** Each new token’s attention calculation involves all past tokens, resulting in a cumulative \( O(n^2) \) cost as the sequence grows.
+- **Memory Growth:** The cache for key/value vectors grows linearly with the sequence length.
+- **Sequential Generation:** Autoregressive generation forces a sequential process that can be slow compared to parallel operations during training.
+
+These issues are at the heart of why researchers are exploring more efficient attention mechanisms (like sparse attention or linearized attention) for handling long sequences during inference.
+
+
+
+
+
+
 
 A **Transformer** layer uses *multi-head attention* to let each “head” attend to different positions in the input sequence, potentially capturing different relationships and patterns. Specifically:
 
@@ -146,7 +335,7 @@ Now we split the dimension \(d_{\text{model}}=8\) into **2 heads** each of dimen
 - **Despite** these inefficiencies, multi-head attention remains widely used because it **empirically works extremely well** and has become a cornerstone of modern deep learning architectures for language, vision, and beyond.
 
 
-\section{KV Cashing}
+\section{KV Caching}
 \label{sec:transformer:kv_caching}
 
 In transformer-based language models—especially those that generate text one token at a time, such as GPT-style models—**key-value caching** is a technique used at inference (decoding) time to avoid recomputing attention over all previously generated tokens. Below is an explanation of how it works and the mathematical underpinnings.
