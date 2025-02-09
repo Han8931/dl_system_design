@@ -1,0 +1,11 @@
+\chapter{Pipeline Parallelism}
+
+\section{Introduction}
+\label{{sec:parallelism:pipeline_parallelism:intro}
+
+The basic idea of the data parallel is to distribute the model across GPUs. However, if the model size is bigger than the VRAM of GPU, the model wouldn't fit in a single GPU. To resolve the issue, we have to split the model across GPUs. For instance, we can put the half of the model into the fist GPU and the remaining half into the second GPU. This technique is called \textit{pipeline parallelism}. 
+
+
+% \begin{itemize}
+% 	\item The communication between GPUs can be a bottleneck for the training speed.
+% \end{itemize}
