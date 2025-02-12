@@ -3,7 +3,7 @@
 \section{Introduction}
 \label{{sec:parallelism:pipeline_parallelism:intro}
 
-The basic idea of the data parallel is to distribute the model across GPUs. However, if the model size is bigger than the VRAM of GPU, the model wouldn't fit in a single GPU. To resolve the issue, we have to split the model across GPUs. For instance, we can put the half of the model into the fist GPU and the remaining half into the second GPU. This technique is called \textit{pipeline parallelism}. 
+	The basic idea of the data parallel is to distribute the model across GPUs. However, if the model size is bigger than the VRAM of GPU, the model wouldn't fit in a single GPU. To resolve the issue, we have to split the model across GPUs. For instance, we can put the half of the model into the fist GPU and the remaining half into the second GPU. This approach is often called \textit{model parallelism}. Let's closely look at one of the model parallelism approaches, called \textit{pipeline parallelism}. 
 
 \textbf{Pipeline Parallelism is a strategy for distributing large deep learning models across multiple devices (GPUs) by splitting the model layers into sequential stages.} Rather than replicating the entire model on each GPU or sharding the parameters themselves, pipeline parallelism assigns a subset of layers to each device in a pipeline-like fashion. This technique is especially helpful when:
 \begin{itemize}
@@ -14,15 +14,15 @@ The basic idea of the data parallel is to distribute the model across GPUs. Howe
 
 \subsection{Illustration of the Pipeline}
 
-In pipeline parallelism, the model is divided into $N$ stages, and each stage is placed on a different GPU (or sometimes on multiple GPUs if you have many layers). Think of it like an assembly line:
+In pipeline parallelism, the model is divided into $N$ sub-networks, and each sub-network is placed on a different GPU (or sometimes on multiple GPUs if you have many layers). Think of it like an assembly line:
 \begin{itemize}
-	\item Stage 1: Layers $1-k$  
-	\item Stage 2: Layers $(k+1)-m$ 
-	\item Stage 3: Layers$(m+1)-\dots$ 
+	\item Sub-Network 1: Layers $1-k$  
+	\item Sub-Network 2: Layers $(k+1)-m$ 
+	\item Sub-Network 3: Layers$(m+1)-\dots$ 
 	\item and so on.
 \end{itemize}
 
-The input minibatch is then split into smaller micro-batches (smaller pieces of data), which flow sequentially through these stages. In other words, the micro-batch is the basic unit of the input to the pipeline parallelism. 
+The input minibatch is then split into smaller micro-batches (smaller pieces of data), which flow sequentially through these sub-networks. In other words, the micro-batch is the basic unit of the input to the pipeline parallelism. 
 \begin{itemize}
 	\item While Stage 1 is processing the next micro-batch, Stage 2 can concurrently work on the intermediate outputs from Stage 1's previous micro-batch.
 \end{itemize}
@@ -94,4 +94,19 @@ In practice, pipeline parallelism is often combined with:
 	\item Sharded Optimizer Approaches (\eg ZeRO, FSDP): Distribute optimizer states and gradients to reduce memory overhead.
 \end{itemize}
 
+
+\section{1F1B}
+
+\begin{figure}[t]
+	\centering
+	\includegraphics[scale=0.23]{./images/1f1b.png}
+\end{figure}
+
+\subsection{Non-interleaved Schedule}
+
+The non-interleaved schedule can be divided into two states. The first state is the startup state (or warm-up state). In the startup state, After completing the forward pass for the first minibatch, it performs the backward pass for the same minibatch, and then starts alternating between performing forward and backward passes for subsequent minibatches. As the backward pass starts propagating to earlier stages in the pipeline, every stage starts alternating between forward and backward pass for different minibatches. As shown in the above figure, in the steady state, every machine is busy either doing the forward pass or backward pass for a minibatch.
+
+\subsection{Interleaved Schedule}
+
+This schedule requires the number of microbatches to be an integer multiple of the stage of pipeline. In this schedule, each device can perform computation for multiple subsets of layers(called a model chunk) instead of a single contiguous set of layers. \ie Before device 1 had layer 1-4; device 2 had layer 5-8; and so on. But now device 1 has layer 1,2,9,10; device 2 has layer 3,4,11,12; and so on. With this scheme, each device in the pipeline is assigned multiple pipeline stages and each pipeline stage has less computation. This mode is both memory-efficient and time-efficient.
 

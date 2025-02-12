@@ -1,0 +1,16 @@
+\chapter{DualPipe}
+
+
+\section{All-to-All vs Point-to-Point}
+% \label{sec:}
+
+When orchestrating multiple GPUs, we need them to communicate with each other to share information like gradients and model parameters. There are two main types of communication patterns: 
+\begin{enumerate}
+	\item All-to-all communication.
+	\item Point-to-point communication.
+\end{enumerate}
+
+\textit{All-to-all communication} involves every GPU in the system simultaneously exchanging data with all other GPUs. The canonical analogy is a group chat where everyone needs to share their updates with everyone else. All-to-all communication is expensive and involves a ton of communication overhead. There are several clever algorithms like ring-AllReduce that can reduce this overhead, but it's still often a bottleneck.
+
+\textit{Point-to-point communication}, on the other hand, is a communication between just two GPUs (the analogy here is a private conversation). One GPU sends data directly to another specific GPU without involving the rest of the system. This is much more efficient in terms of network bandwidth and latency. In practice, point-to-point communication is strongly preferred when possible because it's significantly cheaper in terms of computational resources.
+
