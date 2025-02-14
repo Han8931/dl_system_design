@@ -92,3 +92,8 @@ We can treat \(x\) as a row vector \([1,4]\). For column parallelism, each GPU n
 
 When we do backprop, we can update the model's parameters in the opposite direction. 
 
+
+In Megatron-LM, all Transformer layers, except normalization layer, are using row or column parallelism. 
+
+
+Tensor parallelism can be costly primarily due to the significant communication overhead involved when distributing large model layers across multiple GPUs, requiring frequent data exchange between devices which can become a bottleneck, especially when dealing with very large models and limited network bandwidth; this communication cost often outweighs the benefits of parallel computation, making it a major drawback of tensor parallelism. 

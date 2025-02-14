@@ -101,6 +101,7 @@ In practice, pipeline parallelism is often combined with:
 	\centering
 	\includegraphics[scale=0.23]{./images/1f1b.png}
 \end{figure}
+One of the issues is that the model parameters keep changing while processing the forward passes. This means at every time step, minibatches are going to be forwarded through different weights. Thus, it is necessary to keep different states of the model parameters. Thus, 1F1B increases the memory requirements while increasing the processing speed. 
 
 \subsection{Non-interleaved Schedule}
 
@@ -109,6 +110,7 @@ The non-interleaved schedule can be divided into two states. The first state is 
 \subsection{Interleaved Schedule}
 
 This schedule requires the number of microbatches to be an integer multiple of the stage of pipeline. In this schedule, each device can perform computation for multiple subsets of layers(called a model chunk) instead of a single contiguous set of layers. \ie Before device 1 had layer 1-4; device 2 had layer 5-8; and so on. But now device 1 has layer 1,2,9,10; device 2 has layer 3,4,11,12; and so on. With this scheme, each device in the pipeline is assigned multiple pipeline stages and each pipeline stage has less computation. This mode is both memory-efficient and time-efficient.
+
 
 
 \section{Zero Bubble}
