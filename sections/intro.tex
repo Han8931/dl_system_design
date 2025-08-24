@@ -15,15 +15,23 @@
 \end{itemize}
 
 \section{LLMOps Essentials}
-
 \begin{itemize}
 	\item \textbf{Compression} is the practice of making models smaller. 
-	\item \textbf{Quantizing} is the process of reducing precision in preference of lowering the memory requirements. 
-	\item \textbf{Pruning} is the process of weeding out and removing any parts of the model we deem unworthy. 
-	\item \textbf{Knowledge distillation}
-	\item \textbf{Low-rank approximation}
+		\begin{itemize}
+			\item \textbf{Quantizing} is the process of reducing precision in preference of lowering the memory requirements. 
+			\item \textbf{Pruning} is the process of weeding out and removing any parts of the model we deem unworthy. 
+			\item \textbf{Knowledge distillation} takes the large LLM and train a smaller language model to copy it. 
+			\item \textbf{Low-rank approximation} is a trick to simplify large matrices or tensors to find a lower dimensional representation. 
+			\item \textbf{Mixture of Experts} (MoE) is a technique where we replace the feed-forward (FF) layers in a transformer with MoE layers instead. FF layers are notorious for being parameter-dense and computationally intensive, so replacing them with something better can often have a large effect. MoEs are a group of sparsely activated models. They differ from ensemble techniques in that typically only one or a few expert models will be run, rather than combining results from all models. The sparsity is often induced by a \textit{gate mechanism} that learns which experts to use and/or a router mechanism that determines which experts should even be consulted. 
+		\end{itemize}
+	\item \textbf{Distributed computing} is a technique used in DL to parallelize and speed up large, complex neural networks by dividing the workload across multiple devices or nodes in a cluster.  This approach significantly reduces training and inference times by enabling concurrent computation, data parallelism, and model parallelism. 
+		\begin{itemize}
+			\item \textbf{Data parallelism}: splitting up the data and running them through multiple copies of the model or pipeline. 
+			\item \textbf{Tensor parallelism}: This approach takes advantage of matrix multiplication properties of split up the activations across multiple processors, running the data through and then combining them on the other side of the processors. 
+			\item \textbf{Pipeline parallelism}: This creates a pipeline, as input data will go to the first GPU, process, then transfer to the next GPU, and so on until it's run through the entire model. 
+			\item \textbf{3D parallelism}: We want to take advantages of all three parallelism practices as they can all be run together. This is known as 3D parallelism, which combines data, tensor and pipeline parallelism (DP+TP+PP) together. Since each technique and thus dimension will require at least two GPUs to run 3D parallelism, we will need at least eight GPUs to get started. 
+		\end{itemize}
 \end{itemize}
-
 
 
 

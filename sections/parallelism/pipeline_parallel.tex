@@ -30,7 +30,7 @@ The input minibatch is then split into smaller micro-batches (smaller pieces of 
 \begin{figure}[t]
 	\centering
 	\includegraphics[scale=0.8]{./images/pipeline.pdf}
-	\caption{The Illustration of the pipeline parallel on two GPUs. As you can see the bubble tends to grow as we increase the number of GPUs}
+	\caption{The Illustration of the pipeline parallel on two GPUs. As you can see the \textit{bubble} (\ie underutilization) tends to grow as we increase the number of GPUs}
 \end{figure}
 
 \paragraph{Example:} Imagine a 2-stage pipeline parallel setup (for simplicity):
@@ -77,11 +77,18 @@ However, the overall concept is similar-multiple stages can run backprop (on dif
 
 \subsection{Pipeline Bubbles}
 
-When using pipeline parallelism, you often hear about \textit{pipeline bubbles}. This refers to idle times on some GPUs before the assembly line is fully loaded or after it starts to wind down. 
+When using pipeline parallelism, you often hear about \textit{pipeline bubbles} (or underutilization). This refers to idle times on some GPUs before the assembly line is fully loaded or after it starts to wind down. 
 \begin{itemize}
 	\item Start-up Bubble: In the very beginning, GPU 1 must wait until GPU 0 finishes the first forward pass for micro-batch 1. GPU 1 sits idle during that initial delay.  
 	\item Wind-down Bubble: After the last micro-batch enters GPU 0, GPU 1 continues to process the pipeline while GPU 0 is idle.
 \end{itemize}
+
+The percentage of idle can be computed as follows:
+\begin{align*}
+	\frac{1-m}{m+n-1},
+\end{align*}
+where $m$ is the number of microbatches and $n$ is the number of GPUs. 
+
 
 These bubbles can lead to less-than-ideal speedups, but you can mitigate them by using enough micro-batches to keep the pipeline busy most of the time.
 
