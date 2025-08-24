@@ -33,5 +33,23 @@
 		\end{itemize}
 \end{itemize}
 
+\section{LLM Operations Infrastructures}
+\begin{itemize}
+	\item Data infrastructure is the foundation of DataOps. (\eg Airflow, Prefect, and Mage)  
+	\item Experiment trackers (\eg MLFlow and Weights \& Biases)
+	\item Model registry 
+	\item Feature stores (\eg Feast) is a centralized system for managing, storing, and serving features (the inputs to machine learning models) in a consistent and reliable way. It sits between your raw data sources and your ML models, making it easier to build, deploy, and maintain production ML systems. Why do we need it? In ML, the same features are used in two places:
+		\begin{itemize}
+			\item Training – when building the model.
+			\item Serving/Inference – when the model is deployed to make predictions.
+		\end{itemize}
+	\item Vector databases (\eg Qdrant, Pinecone, and Milvus) are specialized databases that store vectors along with some metadata around the vector, which makes them great for storing embeddings. The power of vector databases isn't in their storage but in the way that they search through the data. 
+	\item Monitoring systems
+	\item GPU-enabled workstations
+	\item Deployment service
+\end{itemize}
+
+
+
 
 
