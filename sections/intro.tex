@@ -44,10 +44,15 @@
 			\item Serving/Inference – when the model is deployed to make predictions.
 		\end{itemize}
 	\item Vector databases (\eg Qdrant, Pinecone, and Milvus) are specialized databases that store vectors along with some metadata around the vector, which makes them great for storing embeddings. The power of vector databases isn't in their storage but in the way that they search through the data. 
-	\item Monitoring systems
-	\item GPU-enabled workstations
-	\item Deployment service
+	\item Monitoring systems (\eg whylogs and ): ML models are often fail silently (\eg data drift \footnote{Data drift in Machine Learning (ML) systems refers to changes in the statistical properties of input data (or the relationship between inputs and outputs) over time, which can degrade model performance if not monitored and addressed.}). 
+	\item GPU-enabled workstations (\eg H100 provides 80GB and NVL \footnote{NVIDIA Link is NVIDIA’s high-speed interconnect technology. It allows GPUs (and sometimes CPUs) to communicate with each other much faster than PCIe. In multi-GPU systems (like deep learning servers, HPC, or AI supercomputers), GPUs need to share data frequently (\eg gradients and parameters). If they only use PCIe, communication is slower, creating a bottleneck.})
+		\begin{itemize}
+			\item If you aren't sure which GPU you need to run which model, multiply the number of billions of parameters by two, since most models at inference will default to run at half precision, FP16 or BF16, which means we need at least 2 bytes for every parameter. You will need a little extra as well for embedding model, which will be about another gigabyte, and more for the actual toknes. One token is about 1MB. For 16 bathes of this size, you will need an extra 8GB of space. 
+			\item For training you will need a lot more space (\eg full precision, optimizer tensors and gradients). Roughly you need 16 bytes for every parameter, so to train a 7B parameter model, you will need 112GB of memory.  
+		\end{itemize}
+	\item Deployment service (\eg NVIDIA Triton Inference Service, MLServer, Seldon, BentoML) 
 \end{itemize}
+
 
 
 
