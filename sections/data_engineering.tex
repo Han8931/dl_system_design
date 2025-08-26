@@ -13,16 +13,129 @@ When evaluating a model, you will need two things: \Ni a \textit{metric} and \Ni
 
 \paragraph{Metrics}
 \begin{itemize}
-	\item ROUGE
-	\item BLEU
-	\item BPC: The bits per character (BPC) evaluation is an example of an entropy-based evaluation for language models. 
+	\item ROUGE (Recall-Oriented Understudy for Gisting Evaluation)
+	\item BLEU (BiLingual Evaluation Understudy)
+	\item BPC (\eg Perplexity): The bits per character (BPC) evaluation is an example of an entropy-based evaluation for language models. 
 \end{itemize}
 
 \paragraph{Industry benchmarks}
 \begin{itemize}
-	\item GLUE
+	\item GLUE (General Language Understanding Evaluation) is essentially a standardized test for language models to measure performance versus humans and each other on language tasks meant to test understanding. 
 	\item SuperGLUE
+	\item MMLU (Massive Multitask Language Understanding). 
 \end{itemize}
+
+\paragraph{Responsible AI benchmarks}
+\begin{itemize}
+	\item HONEST evaluation metric compares how hurtful prompt completions are for different genders. 
+	\item Some datasets: 
+		\begin{itemize}
+			\item WinoBias dataset focuses on gender bias. 
+			\item CALM
+			\item WinoQueer
+		\end{itemize}
+\end{itemize}
+
+\paragraph{Developing your own benchmark}
+\begin{itemize}
+	\item \href{https://github.com/openai/evals}{OpenAI's Evals library} 
+	\item \href{https://huggingface.co/docs/evaluate/en/index}{Huggingface's Evaluate}
+\end{itemize}
+
+\paragraph{Evaluating code generators}
+
+The basic setup looks like this:
+\begin{enumerate}
+	\item Have your model generate code based on docstrings.
+	\item Run the generated code in a safe environment on prebuilt tests to ensure they work and that no errors are thrown
+	\item Run the generated code through a profiler and record the time it takes to complete. 
+	\item Run the generated code through a security scanner and count the number of vulnerabilities. 
+	\item Run the generated code against architectural fitness functions to determine artifacts like how much coupling, integrations, and internal dependencies there are. 
+	\item Run steps 1 to 5 on another LLM.
+	\item Compare results. 
+\end{enumerate}
+
+\paragraph{Evaluating model parameters}
+
+There's a lot you can learn by simply looking at the parameters of an ML model. For instance, an untrained model will have a completely random distribution. 
+
+\begin{lstlisting}[language=Python]
+import weightwatcher as ww
+from transformers import GPT2Model
+
+gpt2_model = GPT2Model.from_pretrained("gpt2")
+gpt2_model.eval()
+
+watcher = ww.WeightWatcher(model=gpt2_model)
+details = watcher.analyze(plot=False)
+print(details.head())
+#    layer_id       name         D  ...      warning        xmax        xmin
+# 0         2  Embedding  0.076190  ... over-trained 3837.188332    0.003564
+# 1         8     Conv1D  0.060738  ...              2002.124419  108.881419
+# 2         9     Conv1D  0.037382  ...               712.127195   46.092445
+# 3        14     Conv1D  0.042383  ...              1772.850274   95.358278
+# 4        15     Conv1D  0.062197  ...               626.655218   23.727908
+
+\end{lstlisting}
+ 
+The spectral analysis plots evaluate the frequencies of eigenvalues for each layer of a model. These plots tell you whether a model (or layer) looks well-trained and generalizes well or is unstable/poorly conditioned.
+Shape of the Spectrum (How eigenvalues are distributed)
+\begin{itemize}
+	\item Power-law exponent ($\alpha$):
+		\begin{itemize}
+			\item Good if between 2 and 6: the layer is well-trained.
+			\item Bad if $\alpha > 6$: layer might be undertrained or over-regularized.
+		\end{itemize}
+	\item Fit quality (Dks):
+		\begin{itemize}
+			\item Low Dks: spectrum matches the expected ``heavy-tailed'' shape, reliable.
+			\item High Dks: poor fit, unstable or unstructured layer.
+		\end{itemize}
+\end{itemize}
+
+\section{Data for LLMs}
+It has been shown that data is the most important part of training an LLM. 
+
+\begin{itemize}
+	\item WikiText
+	\item Wiki-40B
+	\item Europarl
+	\item Common Crawl
+	\item OpenWebText
+	\item The Pile
+	\item RedPajama
+	\item OSCAR
+\end{itemize}
+
+
+\begin{table}[h]
+	\setlength{\tabcolsep}{4pt}
+	\caption{Summary of datasets}
+	\centering
+	\begin{tabular}{llc}
+		\toprule
+		Dataset & Contents & Size \\
+		\midrule
+		WikiText & English Wikipedia & <1GB \\
+		Wiki-40B & Multi-lingual Wikipedia & 10GB \\
+		Europarl & European Parliament proceedings & 1.5GB \\
+		Common Crawl & The internet & \sim 300GB \\
+		OpenWebText & Curated internet using Reddit & 55GB \\
+		The Pile & Everything above plus specialty datasets (books, law, med) & 825GB \\
+		\multirow{2}{*}{RedPajama} & GitHub, arXiv, Books, Wikipedia, StackExchange & 5TB \\
+								  &, and multiple version of Common Crawl&\\
+		OSCAR & Highly curated multilingual dataset with 166 languages & 9.4TB\\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+
+
+
+
+
+
+
 
 
 
