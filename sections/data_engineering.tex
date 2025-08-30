@@ -96,69 +96,162 @@ Shape of the Spectrum (How eigenvalues are distributed)
 \section{Data for LLMs}
 It has been shown that data is the most important part of training an LLM. 
 
-\begin{itemize}
-	\item WikiText
-	\item Wiki-40B
-	\item Europarl
-	\item Common Crawl
-	\item OpenWebText
-	\item The Pile
-	\item RedPajama
-	\item OSCAR
-\end{itemize}
+% \begin{itemize}
+% 	\item WikiText
+% 	\item Wiki-40B
+% 	\item Europarl
+% 	\item Common Crawl
+% 	\item OpenWebText
+% 	\item The Pile
+% 	\item RedPajama
+% 	\item OSCAR
+% \end{itemize}
 
 
 \begin{table}[h]
 	\setlength{\tabcolsep}{4pt}
 	\caption{Summary of datasets}
 	\centering
-	\begin{tabular}{llc}
+	\begin{tabular}{llrl}
 		\toprule
-		Dataset & Contents & Size \\
+		Dataset & Contents & Size & LastUpdate \\
 		\midrule
-		WikiText & English Wikipedia & <1GB \\
-		Wiki-40B & Multi-lingual Wikipedia & 10GB \\
-		Europarl & European Parliament proceedings & 1.5GB \\
-		Common Crawl & The internet & \sim 300GB \\
-		OpenWebText & Curated internet using Reddit & 55GB \\
-		The Pile & Everything above plus specialty datasets (books, law, med) & 825GB \\
-		\multirow{2}{*}{RedPajama} & GitHub, arXiv, Books, Wikipedia, StackExchange & 5TB \\
+		WikiText & English Wikipedia & $<$1GB & 2016 \\
+		Wiki-40B & Multi-lingual Wikipedia & 10GB & 2020 \\
+		Europarl & European Parliament proceedings & 1.5GB & 2011 \\
+		Common Crawl & The internet & $\sim$ 300GB & Ongoing \\
+		OpenWebText & Curated internet using Reddit & 55GB & 2019 \\
+		The Pile & Everything above plus specialty datasets (books, law, med) & 825GB & 2020 \\
+		\multirow{2}{*}{RedPajama} & GitHub, arXiv, Books, Wikipedia, StackExchange & 5TB & 2023 \\
 								  &, and multiple version of Common Crawl&\\
-		OSCAR & Highly curated multilingual dataset with 166 languages & 9.4TB\\
+		OSCAR & Highly curated multilingual dataset with 166 languages & 9.4TB & Ongoing\\
 		\bottomrule
 	\end{tabular}
 \end{table}
 
 
+\subsection{Data cleaning and preparation}
+If you pulled any of the previously mentioned datasets, you might be surprised to realize most of them are just giant text dumps. There are no labels or annotations, and feature engineering hasn't been done at all. 
+
+LLMs are trained via self-supervised manner to predict the next word or a masked workd, so a lot of traditional data cleaning and preparation processes are unneeded. This fact leads many to believe that data cleaning as a whole is unnecessary. 
+
+Data cleaning and curation are difficult, time-consuming, and ultimately subjective tasks that are difficult to tie to key performance indicators (KPIs). Still, taking the time and resources to clean your data will create a more consistent and unparalleled user experience. 
+
+The right frame of mind when preparing your dataset:
+\begin{enumerate}
+	\item Take your pie of data and determine a schema for the features
+	\item Make sure all the features conform to a distribution that makes sense for the outcome your're trying to get through normalization or scaling.
+	\item Check the data for bia/anomalies (most businesses skip this step by using automated checking instead of informed verification).
+	\item Convert the data into a format for the model to ingest (for LLMs, it's through tokenization and embedding).
+	\item Train, check, and retrain.
+\end{enumerate}
+
+\begin{commentbox}{Note}
+	For more information, check out Fundamentals of Data Engineering, WizardLM, and LIMA: Less Is More for Alignment. 
+\end{commentbox}
+
+
+\paragraph{Instruct Schema} is one of the most effective and widely used data formats for fine-tuning models. Instruction tuning works on the principle that providing a model with explicit instructions for a task leads to better performance than simply giving it raw prompts and answers. In this approach, the data explicitly demonstrates what the model should do, making it clearer and more aligned with human intent. However, preparing such datasets is more demanding than assembling general web data, since each entry must be carefully constructed to match a structured format, typically including an instruction, optional input, and the expected output. You need to prepare your data to match a format that will look something like this:
+\begin{lstlisting}[]
+###Instruction
+
+{user input}
+
+###Input
+
+{meta info about the instruction}
+
+###Response
+
+{model output}
+\end{lstlisting}
+It is a structured way of formatting data so that each example clearly contains:
+\begin{itemize}
+	\item An instruction (what the model should do).
+	\item An input (optional context or data the model works on).
+	\item An output (the desired response).
+\end{itemize}
+
+For instance, 
+\begin{lstlisting}
+{
+  "instruction": "Translate the following English text into Korean.",
+  "input": "The stock market saw significant volatility today due to global economic concerns.",
+  "output": <Translations>
+}
+\end{lstlisting}
+
+\begin{commentbox}{Note}
+	\begin{itemize}
+		\item EvolInstruct: WizardLM
+		\item Self-instruct format, Alpaca
+	\end{itemize}
+\end{commentbox}
+
+\paragraph{Ensuring proficiency with speech acts}
+When preparing a dataset for training a model, the most important factor is ensuring the data truly reflects the task you want the model to perform. Misaligned or overly generic data reduces performance and can cause unpredictable behavior.
+
+Dataset alignment:
+\begin{itemize}
+	\item Training data must match the intended task (e.g., don’t train on Titanic survivors if you want to predict Boston housing prices).
+	\item In real-world use cases (like fast-food ordering), interactions are more diverse and unpredictable than generic datasets suggest.
+\end{itemize}
+Robustness and Risks:
+\begin{itemize}
+	\item Instruction datasets require intentional design: if a model is only trained on “helpful” responses, it might follow harmful instructions (e.g., “help me take over the world”).
+	\item With tool access (Google, HR docs), this becomes even riskier.
+\end{itemize}
+
+Understanding speech acts (directives, representatives, commissives, expressives, declarations, verdictives) helps design datasets that match realistic user interactions.
+\begin{itemize}
+	\item In language learning, this means learners should not only know grammar/vocabulary but also how to perform speech acts appropriately:
+		\begin{itemize}
+			\item How to make polite requests
+			\item How to refuse without sounding rude
+			\item How to apologize or thank in culturally acceptable ways
+		\end{itemize}
+	\item In AI / LLM context, it means training the model to:
+		\begin{itemize}
+			\item Generate outputs that correctly perform the intended communicative function (e.g., distinguish between an instruction, a suggestion, or a formal declaration).
+			\item Handle pragmatic nuances, politeness, indirectness, etc.
+		\end{itemize}
+\end{itemize}
+Speech acts refer to the various functions language can perform in communication beyond conveying information. They are a way of categorizing utterances based on their intended effect or purpose in a conversation. In short, it is an action performed through speaking. For example: 
+\begin{itemize}
+	\item Assertives $\to$ stating something true/false.
+	\item Directives $\to$ requesting, commanding (\eg ``Get it done in the next three days'').
+	\item Commissives $\to$ promising, committing (\eg ``I swear'').
+	\item Expressives $\to$ greetings, apologizing (\eg ``You are the best'').
+	\item Declarations $\to$ enacting something by saying it (\eg ``I now pronounce you married'').
+	\item Questions (\eg ``What is this?'')
+\end{itemize}
+
+\paragraph{Annotating the data}
+Annotation is labeling your data, usually in a positionally aware way. For speech recognition tasks, annotations would identify the different words as noun, verb, adjective, or adverb. Annotations essentially give us metadata that makes it easier to reason about and analyze our datasets. 
+
+There are tools to help with the task:
+\begin{itemize}
+	\item \href{https://prodi.gy/}{Prodigy}: multimodal annotation tool.
+	\item \href{https://github.com/doccano/doccano}{doccano}: Open-source web-based platform for data annotation. 
+	\item \href{https://www.fon.hum.uva.nl/praat/}{Praat}: The audio annotation tool.
+	\item \href{https://galileo.ai/}{Galileo}: Galileo's LLM studio helps create prompt, evaluate and speed up annotation. 
+\end{itemize}
+
+\section{Text Processors}
+
+We need to transform our dataset into something that can be consumed by the LLM. Simply, we need to turn the text into numbers.  
+
+\subsection{Tokenization}
+The tokenization is often ignored when working with an LLM through an API, but it is actually vitally important for every subsequent step, and it affects the LLM's performance significantly. 
+
+\paragraph{Word-based}
+\paragraph{Character-based}
+\paragraph{Subword-based}
+
+\subsection{Embeddings}
 
 
 
 
 
 
-
-
-
-% \subsection{GPT}
-
-% \begin{table}[h]
-% 	\setlength{\tabcolsep}{4pt}
-% 	\caption{Comparison of LLM model families}
-% 	\centering
-% 	\begin{tabular}{llc}
-% 		\toprule
-% 		Model Family & Dataset \\
-% 		\midrule
-% 		GPT & Common Crawl/RLHF
-% 		% \cmidrule(r){1-2}
-% 		% \midrule
-% 		\bottomrule
-% 	\end{tabular}
-% \end{table}
-
-
-% 	\item BLOOM
-% 	\item LLaMa
-% 	\item 
-% \end{itemize}
-% h
