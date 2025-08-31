@@ -245,10 +245,21 @@ We need to transform our dataset into something that can be consumed by the LLM.
 The tokenization is often ignored when working with an LLM through an API, but it is actually vitally important for every subsequent step, and it affects the LLM's performance significantly. 
 
 \paragraph{Word-based}
+Word-based tokenizers most commonly split on whitespace, but there are other methods like using regex, dictionaries, or punctuation. 
+
 \paragraph{Character-based}
+Character-based encoding methods are the most straightforward and easiest to implement since we split on the UTF-8 character encodings. However, it comes with a major loss of information and fails to keep relevant syntax, semantics, or morphology (morpheme like prefix and suffixes) of the text. 
+
 \paragraph{Subword-based}
+Subword-based tokenizers have proven to be the best option so far. 
+\begin{itemize}
+	\item BPE
+	\item WordPiece
+	\item SentencePiece
+\end{itemize}
 
 \subsection{Embeddings}
+Embeddings provide meaning to the vectors generated during tokenization. 
 
 
 
