@@ -4,4 +4,34 @@
 Training is a resource-intensive endeavor. A model that only takes a single GPU to run inference on may take 10 times that many to train if, for nothing else, to parallelize your work and speed things up so you aren't waiting for a thousand years for it to finish training.  
 
 \subsection{Setting up} 
-It should be pointed out up front that while multi-GPU environments are powerful, they are also expensive. 
+It should be pointed out up front that while multi-GPU environments are powerful, they are also expensive. For the rest of us, setting up a virtual machine (VM) in Google's Compute Engine is one of the easiest methods. 
+\paragraph{Google Virtual Machine} One of the easiest ways to create a multi-GPU environment is to set up a VM on Google's cloud. 
+\begin{enumerate}
+	\item Create a Google Cloud Project (GCP).
+		\begin{itemize}
+			\item Set up billing
+			\item Download the gcloud CLI. 
+		\end{itemize}
+	\item After setting up your account, GCP sets your GPU quotas to 0. Quotas are used to manage your costs. You need to increase to 2 or more, since we plan to use multiple GPUs.  
+	\item Init by ``\texttt{gcloud init}''
+	\item 
+\end{enumerate}
+
+\subsection{Libraries}
+
+\paragraph{DeepSpeed:} DeepSpeed is an optimization library for distributed deep learning. DeepSpeed is powered by Microsoft and implements various enhancements for speed in training and inference, like handling extremely long or multiple inputs in different modalities, quantization, caching weights and inputs, and, probably the hottest topic right now, scaling up to thousands of GPUs.  
+
+To install,
+\begin{enumerate}
+	\item Install PyTorch
+	\item \texttt{pip install deepspeed}
+\end{enumerate}
+
+\paragraph{Accelerate:} From HuggingFace, Accelerate is made to help abstract the code for parallelizing and scaling to multiple GPUs away from you so that you can focus on the training and inference side. 
+
+To install,
+\begin{enumerate}
+	\item \texttt{pip install accelerate}
+\end{enumerate}
+
+\section{Basic Training Techniques}
