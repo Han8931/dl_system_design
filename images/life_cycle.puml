@@ -1,0 +1,62 @@
+@startuml
+' ── Layout & styles ─────────────────────────────────────────────────────────
+left to right direction
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam state {
+  FontName Helvetica
+  FontSize 13
+  RoundCorner 16
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+}
+
+' Stereotype color mapping
+skinparam state {
+  BackgroundColor<<Data>>  #E0F2FE
+  BorderColor<<Data>>      #0284C7
+
+  BackgroundColor<<Train>> #FEF3C7
+  BorderColor<<Train>>     #D97706
+
+  BackgroundColor<<Model>> #DCFCE7
+  BorderColor<<Model>>     #16A34A
+
+  BackgroundColor<<Use>>   #EDE9FE
+  BorderColor<<Use>>       #7C3AED
+}
+
+' ── Nodes (stages) ─────────────────────────────────────────────────────────
+state "Very Large Dataset\n(web scraping of the internet)" as DATA <<Data>>
+state "Training from Scratch" as TRAIN <<Train>>
+state "Foundation Model" as FM <<Model>>
+state "Fine-Tuning" as FT <<Train>>
+state "Specialized LLM" as SLM <<Model>>
+state "Prompting" as PR <<Use>>
+
+' ── Core flows (non-linear graph with branches & loops) ─────────────────────
+DATA --> TRAIN : curate/filter/deduplicate
+TRAIN --> FM   : pretraining
+
+FM --> FT      : SFT / RLHF / DPO
+FT --> SLM     : domain/task adaptation
+
+FM --> PR      : zero-/few-shot use
+SLM --> PR     : inference
+
+' Feedback loops & alternative paths
+PR --> FT      : labeled interactions / prefs
+PR --> DATA    : logs & human feedback
+FM --> TRAIN   : continual pretraining (optional)
+DATA --> FT    : small curated subset
+SLM --> FT     : refresh / adapter updates
+
+' ── Legend ──────────────────────────────────────────────────────────────────
+legend left
+|= Stereotype |= Meaning |
+|<<Data>>  | Data/Corpus stage |
+|<<Train>> | Training/Optimization stage |
+|<<Model>> | Resulting model artifact |
+|<<Use>>   | Inference/Usage stage |
+endlegend
+@enduml

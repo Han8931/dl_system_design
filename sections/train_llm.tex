@@ -34,4 +34,297 @@ To install,
 	\item \texttt{pip install accelerate}
 \end{enumerate}
 
+\paragraph{PyTorch FSDP}
+
+Install PyTorch with distributed support (CUDA version must match drivers):
+\begin{lstlisting}[language=Python]
+pip install torch torchvision torchaudio
+
+# (Optional) For speedups
+pip install torchmetrics accelerate
+\end{lstlisting}
+
+Ensure passwordless SSH between nodes if you're on a bare-metal or HPC cluster.
+
+Create \texttt{train\_fsdp.py}:
+
+\begin{lstlisting}[language=Python]
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.distributed as dist
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+
+# --- Simple Transformer block ---
+class ToyBlock(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(1024, 4096)
+        self.act = nn.ReLU()
+        self.fc2 = nn.Linear(4096, 1024)
+
+    def forward(self, x):
+        return self.fc2(self.act(self.fc1(x)))
+
+class ToyModel(nn.Module):
+    def __init__(self, depth=6):
+        super().__init__()
+        self.layers = nn.Sequential(*[ToyBlock() for _ in range(depth)])
+
+    def forward(self, x):
+        return self.layers(x)
+
+def main():
+    dist.init_process_group("nccl")
+    torch.cuda.set_device(dist.get_rank() % torch.cuda.device_count())
+
+    model = ToyModel().cuda()
+
+    # Auto-wrap large layers with FSDP
+    auto_wrap_policy = transformer_auto_wrap_policy
+    model = FSDP(model, auto_wrap_policy=auto_wrap_policy)
+
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4)
+
+    for step in range(20):
+        x = torch.randn(8, 1024).cuda()
+        y = model(x).mean()
+        y.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+        if dist.get_rank() == 0:
+            print(f"Step {step} done.")
+
+    dist.destroy_process_group()
+
+if __name__ == "__main__":
+    main()
+\end{lstlisting}
+
+If your node has 4 GPUs:
+
+\texttt{torchrun --nproc\_per\_node=4 train\_fsdp.py}
+\begin{itemize}
+	\item 4 processes (one per GPU).
+	\item NCCL backend handles GPU communication.
+\end{itemize}
+
+Let's try running multiple nodes
+
+\begin{itemize}
+	\item Node 0: 10.0.0.1
+	\item Node 1: 10.0.0.2
+	\item 4 GPUs per node
+	\item Total world size = 8 (2 nodes $\times$ 4 GPUs)
+\end{itemize}
+
+\begin{lstlisting}[language=Python]
+**On Node 0 (rank 0):**
+
+torchrun --nnodes=2 --nproc_per_node=4 \
+         --node_rank=0 \
+         --master_addr=10.0.0.1 \
+         --master_port=29500 \
+         train_fsdp.py
+
+**On Node 1 (rank 1):**
+
+torchrun --nnodes=2 --nproc_per_node=4 \
+         --node_rank=1 \
+         --master_addr=10.0.0.1 \
+         --master_port=29500 \
+         train_fsdp.py
+\end{lstlisting}
+\begin{itemize}
+	\item \texttt{--nnodes=2}: total number of nodes.
+	\item \texttt{--nproc\_per\_node=4}: GPUs per node.
+	\item \texttt{--node\_rank}: each node's unique index.
+	\item \texttt{--master\_addr}: IP/hostname of rank 0 node.
+	\item \texttt{--master\_port}: open port for coordination.
+\end{itemize}
+
+\begin{itemize}
+	\item Activation checkpointing: Saves memory by discarding intermediate activations during forward pass and recomputing them during backward pass.
+	\item Mixed precision: Uses FP16 or BF16 for computations (faster, less memory) while keeping FP32 for stability in some ops.
+\end{itemize}
+
+Full Example with FSDP + Checkpointing + AMP:
+
+\begin{lstlisting}[language=Python]
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.distributed as dist
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+from torch.utils.checkpoint import checkpoint
+
+# --- A block with activation checkpointing ---
+class CheckpointedBlock(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(1024, 4096)
+        self.act = nn.ReLU()
+        self.fc2 = nn.Linear(4096, 1024)
+
+    def forward(self, x):
+        def forward_fn(x):
+            return self.fc2(self.act(self.fc1(x)))
+        # checkpoint will discard activations & recompute in backward
+        return checkpoint(forward_fn, x)
+
+# --- Toy Model ---
+class ToyModel(nn.Module):
+    def __init__(self, depth=6):
+        super().__init__()
+        self.layers = nn.Sequential(*[CheckpointedBlock() for _ in range(depth)])
+
+    def forward(self, x):
+        return self.layers(x)
+
+def main():
+    dist.init_process_group("nccl")
+    torch.cuda.set_device(dist.get_rank() % torch.cuda.device_count())
+
+    # Build model
+    model = ToyModel().cuda()
+    auto_wrap_policy = transformer_auto_wrap_policy
+    model = FSDP(model, auto_wrap_policy=auto_wrap_policy)
+
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4)
+
+    # Use mixed precision autocast (bf16 preferred if hardware supports it)
+    scaler = torch.cuda.amp.GradScaler(enabled=True)  # works for fp16
+
+    for step in range(20):
+        x = torch.randn(8, 1024).cuda()
+
+        with torch.cuda.amp.autocast(dtype=torch.bfloat16):  # or torch.float16
+            y = model(x).mean()
+
+        # backward with gradient scaler
+        scaler.scale(y).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad()
+
+        if dist.get_rank() == 0:
+            print(f"Step {step} done.")
+
+    dist.destroy_process_group()
+
+if __name__ == "__main__":
+    main()
+\end{lstlisting}
+\begin{itemize}
+	\item Checkpointing: Wrap the forward function with \texttt{torch.utils.checkpoint.checkpoint}.
+	\item AMP (Automatic Mixed Precision):
+		\begin{itemize}
+			\item Use \texttt{torch.cuda.amp.autocast} for forward pass.
+			\item Use \texttt{torch.cuda.amp.GradScaler} for loss scaling (needed for FP16, not BF16).
+		\end{itemize}
+	\item BF16 vs FP16:
+		\begin{itemize}
+			\item Use BF16 if your GPUs are A100/H100 (more stable).
+			\item Use FP16 + GradScaler for V100 or older cards.
+		\end{itemize}
+\end{itemize}
+
+
+\begin{itemize}
+	\item Full State Dict: Gather the full parameters on rank 0 and save them. (simpler, larger files).
+	\item Sharded State Dict: Each rank saves only its shard. (efficient, but needs all shards to reload).
+	\item Rank 0 only writing: Typically only rank 0 writes to disk to avoid file conflicts.
+\end{itemize}
+\begin{lstlisting}[language=Python]
+import os
+import torch
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import StateDictType, FullStateDictConfig
+
+CHECKPOINT_DIR = "./checkpoints"
+
+def save_checkpoint(model, optimizer, step):
+    # Ensure only rank 0 writes the file
+    rank = torch.distributed.get_rank()
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+    # Switch to FULL state dict (gathered on rank 0)
+	# offload_to_cpu=True: keeps memory usage down when gathering full state.
+    full_sd_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+    with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_sd_config):
+        model_state = model.state_dict()
+        optim_state = optimizer.state_dict()
+
+    if rank == 0: # only rank 0 writes to disk.
+        save_path = os.path.join(CHECKPOINT_DIR, f"step_{step}.pt")
+        torch.save({"model": model_state, "optimizer": optim_state, "step": step}, save_path)
+        print(f"[Rank 0] Saved checkpoint to {save_path}")
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python]
+def load_checkpoint(model, optimizer, load_path):
+    # Load only on rank 0
+    rank = torch.distributed.get_rank()
+    map_location = "cpu" if rank == 0 else "meta"  # meta avoids OOM on other ranks
+    checkpoint = torch.load(load_path, map_location=map_location)
+
+    # Use FULL state dict context
+    full_sd_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+    with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_sd_config):
+        model.load_state_dict(checkpoint["model"])
+
+    # Broadcast model weights to all ranks
+    torch.distributed.barrier()
+    optimizer.load_state_dict(checkpoint["optimizer"])
+    print(f"[Rank {rank}] Loaded checkpoint from {load_path}")
+\end{lstlisting}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|p{2.5cm}|p{5cm}|p{6.5cm}|}
+\hline
+\textbf{Library} & \textbf{Core Idea} & \textbf{Strengths / Use Cases} \\
+\hline
+DeepSpeed & 
+Distributed training engine with ZeRO (Zero Redundancy Optimizer) sharding & 
+- ZeRO-1/2/3: memory savings via parameter/gradient/optimizer sharding \newline
+- Offloading to CPU/NVMe \newline
+- Mixture of Experts (MoE) support \newline
+- Great for very large dense or MoE models \\
+\hline
+FSDP (Fully Sharded Data Parallel) & 
+Native PyTorch module for full parameter, gradient, optimizer sharding & 
+- First-party, stable, integrated in PyTorch \newline
+- ZeRO-3–like memory scaling \newline
+- Easy to use with Hugging Face Accelerate/Lightning \\
+\hline
+Megatron-LM & 
+Parallelism library from NVIDIA (TP, PP, SP, EP) & 
+- Tensor Parallelism (TP) for matmuls \newline
+- Pipeline Parallelism (PP) for layer distribution \newline
+- Sequence/Expert Parallelism for long-context and MoE \newline
+- Standard for 30B–100B+ scale \\
+\hline
+\end{tabular}
+\caption{Comparison of Core Libraries for Multi-GPU LLM Training}
+\end{table}
+
+\begin{itemize}
+	\item Up to $~13$B on few GPUs $\to$ FSDP (simpler, first-party).
+	\item >30B or MoE, multi-node $\to$ Megatron-LM + (FSDP or DeepSpeed ZeRO).
+	\item When GPU memory is tight $\to$ DeepSpeed ZeRO-3 (with offload).
+\end{itemize}
+
 \section{Basic Training Techniques}
+
+Unlike traditional ML models, LLMs are often trained in stages:
+
+\begin{itemize}
+	\item \href{https://optuna.org/}{Optuna}: Open source hyperparameter optimization (HPO) framework for machine learning, including Large Language Models (LLMs). 
+\end{itemize}
+
+
+
+

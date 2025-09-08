@@ -1,0 +1,38 @@
+\chapter{Parameter Efficient Fine-Tuning}
+
+\section{LoRA}
+
+When fine-tuning a neural network for a new task, we adjust its weights $W$ by learning an update $\Delta W$, yielding
+\begin{align*}
+	W' \;=\; W + \Delta W.
+\end{align*}
+\textit{LoRA} (Low-Rank Adaptation) avoids updating $W$ directly. Motivated by the **intrinsic rank hypothesis**—the idea that task-critical changes lie in a low-dimensional subspace—LoRA parameterizes the update as a low-rank product:
+
+\begin{align*}
+	\Delta W \;=\; B A,\qquad W' \;=\; W + BA,
+\end{align*}
+while keeping $W$ frozen. Here $B \in \mathbb{R}^{d\times r}$ and $A \in \mathbb{R}^{r\times d}$ with $r \ll d$, so $BA$ is a low-rank approximation to the full update.
+
+This factorization dramatically reduces trainable parameters. Instead of learning all $d^2$ entries of $\Delta W$ (for a $d\times d$ weight), LoRA learns only the factors $B$ and $A$, totaling $2dr$ parameters—much smaller when $r \ll d$. (The same idea applies to non-square $W \in \mathbb{R}^{d\times k}$, using $B\in\mathbb{R}^{d\times r}$ and $A\in\mathbb{R}^{r\times k}$, for a cost of $r(d+k)$ instead of $dk$.)
+
+
+\section{QLoRA}
+
+While LoRA reduces the number of \emph{trainable} parameters, it still requires storing and using the full-precision base model $W$ during fine-tuning. For very large LLMs (tens or hundreds of billions of parameters), this memory demand can exceed the capacity of a single GPU.
+
+\textit{QLoRA} (Quantized Low-Rank Adaptation) addresses this by combining LoRA with parameter \emph{quantization}. Instead of keeping $W$ in 16- or 32-bit precision, QLoRA stores it in a lower-bit format (typically 4-bit). During training:
+\begin{itemize}
+	\item The frozen base weights $W$ are kept in 4-bit quantized form, greatly reducing memory usage.
+	\item On-the-fly, $W$ is \emph{dequantized} into higher precision (e.g., 16-bit) for computations.
+	\item As in LoRA, trainable low-rank adapters $A, B$ are introduced to capture task-specific updates.
+\end{itemize}
+
+The update rule remains
+\begin{align*}
+	W' \;=\; W + BA,
+\end{align*}
+but now $W$ is quantized, while $A, B$ are small full-precision matrices.
+
+% Together, these make it possible to fine-tune very large LLMs on consumer-grade GPUs (e.g., a single 24GB GPU), while preserving task performance comparable to full fine-tuning.
+
+
