@@ -1,1 +1,17 @@
 \chapter{LLM Services: A Practical Guide}
+
+\textit{Production} refers to the phase where the model is integrated into live or operational environment to perform its intended tasks or provide services to end users. It's a crucial phase in making the model available for real-world applications and services. In this chapter, we will explore how to package up an LLM into a service or API so that it can take on-demand requests. Then, we will study how to set up a cluster in the cloud where you can deploy this service. 
+
+\section{Creating an LLM service}
+
+\subsection{Model Compilation}
+The success of any model in production is dependent on the hardware it runs on. Unfortunately, when programming in a high-level language like Python-based frameworks like PyTorch or TensorFlow, the model won't be optimized to take full advantage of the hardware. This is where compiling comes into play. Compiling is the process of taking code written in a high-level language and converting or lowering it to machine-level code that the computer can process quickly. Compiling your LLm can easily lead to major inference and cost improvements. 
+
+\paragraph{Kernel Tuning} kernel tuning means searching for the fastest way to run each operator (or fused group of ops) on your target hardware. A kernel here is a low-level compute routine (often a CUDA kernel on GPU or vectorized routine on CPU). Tuning picks implementation choices—"the schedule"—that minimize latency or maximize throughput for your tensor shapes.
+
+\paragraph{Kernel Fusion}
+\paragraph{Graph Optimization}
+\paragraph{TensorRT}
+\paragraph{ONNX Runtime}
+
+\subsection{LLM storage strategies}
