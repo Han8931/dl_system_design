@@ -7,11 +7,121 @@
 \subsection{Model Compilation}
 The success of any model in production is dependent on the hardware it runs on. Unfortunately, when programming in a high-level language like Python-based frameworks like PyTorch or TensorFlow, the model won't be optimized to take full advantage of the hardware. This is where compiling comes into play. Compiling is the process of taking code written in a high-level language and converting or lowering it to machine-level code that the computer can process quickly. Compiling your LLm can easily lead to major inference and cost improvements. 
 
-\paragraph{Kernel Tuning} kernel tuning means searching for the fastest way to run each operator (or fused group of ops) on your target hardware. A kernel here is a low-level compute routine (often a CUDA kernel on GPU or vectorized routine on CPU). Tuning picks implementation choices—"the schedule"—that minimize latency or maximize throughput for your tensor shapes.
+\paragraph{Kernel Tuning} In DL, and high-performance computing, a kernel is a small program or function designed to run on a GPU or other similar processors. These routines are developed by the hardware vendor to maximize chip efficiency. 
+
+During kernel tuning, the most suitable kernels are chosen from a large collection of highly optimized kernels. 
+
 
 \paragraph{Kernel Fusion}
+A \textbf{GPU kernel} is the tiny function that runs on each element. \textbf{Fusion} $=$ do several elementwise ops in one kernel so each element is read from VRAM once, processed in registers, then written back once.
+
+\begin{commentbox}{The \texttt{y = ReLU(x + b)} example}
+Assume \texttt{x} and \texttt{b} are the same length (or \texttt{b} is broadcast on the last dim).
+
+Without fusion (two kernels: add, then ReLU):
+\begin{enumerate}
+	\item For every element i:
+	\item Read x[i] from VRAM
+	\item Read b[i] from VRAM
+	\item Compute t = x[i] + b[i]
+	\item Write t to VRAM ← intermediate array
+	\item Read t from VRAM
+	\item Compute y = max(t, 0)
+	\item Write y to VRAM
+\end{enumerate}
+Global-memory ops per element: 5 (read x, read b, write t, read t, write y)
+Two kernel launches (one for add, one for ReLU).
+
+With fusion (one kernel: add+ReLU together)
+\begin{enumerate}
+	\item For every element i:
+	\item Read x[i] from VRAM
+	\item Read b[i] from VRAM
+	\item Compute t = x[i] + b[i] (kept in a register, not VRAM)
+	\item Compute y = max(t, 0)
+	\item Write y to VRAM
+\end{enumerate}
+Global-memory ops per element: 3 (read x, read b, write y)
+One kernel launch.
+\end{commentbox}
+
+ReLU Example:
+\begin{lstlisting}[language=Python]
+import torch, time
+
+B, C = 4096, 4096
+x = torch.randn(B, C, device="cuda", dtype=torch.float32)
+b = torch.randn(C,     device="cuda", dtype=torch.float32)
+
+def add_relu_unfused(x, b):
+    # Eager mode typically launches two kernels (add, then relu)
+    return torch.relu(x + b)
+
+# PyTorch 2.x compiler (Inductor) generates fused kernels automatically
+# This fuses common elementwise chains (like add→ReLU) into single kernels.
+add_relu_fused = torch.compile(add_relu_unfused, backend="inductor")
+
+# Correctness check
+with torch.no_grad():
+    y1 = add_relu_unfused(x, b)
+    y2 = add_relu_fused(x, b)
+    print("max |diff| =", (y1 - y2).abs().max().item())
+
+# Simple timing
+def bench(fn, iters=50, warmup=10):
+    for _ in range(warmup):
+        fn(x, b); torch.cuda.synchronize()
+    t0 = time.perf_counter()
+    for _ in range(iters):
+        fn(x, b)
+    torch.cuda.synchronize()
+    return (time.perf_counter() - t0) * 1000 / iters
+
+print("Unfused  :", bench(add_relu_unfused), "ms/iter")
+print("Fused    :", bench(add_relu_fused),  "ms/iter")
+\end{lstlisting}
+
+
 \paragraph{Graph Optimization}
-\paragraph{TensorRT}
+Graph optimization = semantics-preserving rewrites of the op graph (fold, fuse, simplify, relayout, retype, reschedule) so the lowered kernels do less work with less memory traffic
+
+\paragraph{TensorRT} NVIDIA TensorRT is an SDK that converts a trained model into an optimized ``engine'' and then runs that engine with very low latency/high throughput on NVIDIA GPUs. It includes an optimizer (compiler) and a lightweight runtime.
+
+How it works (typical workflow):
+\begin{enumerate}
+	\item Import your model (usually ONNX; there are parsers and framework bridges).
+	\item Build an optimized engine: TensorRT selects fast kernels (“tactics”), fuses layers, lowers precision (FP16/INT8) if allowed, and specializes to your shapes/hardware.
+	\item Serialize the engine to a .plan file (so you can load it instantly in production).
+	\item Run it via the TensorRT runtime (C++/Python).
+\end{enumerate}
+
+\begin{lstlisting}[language=Python]
+import tensorrt as trt
+
+logger  = trt.Logger(trt.Logger.WARNING)
+builder = trt.Builder(logger)
+network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+parser  = trt.OnnxParser(network, logger)
+
+with open("model.onnx", "rb") as f:
+    assert parser.parse(f.read()), parser.get_error(0)
+
+config = builder.create_builder_config()
+config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 4 << 30)  # workspace budget
+config.set_flag(trt.BuilderFlag.FP16)  # enable mixed precision if supported
+
+# Dynamic-shape profile for input "input" (name must match your ONNX)
+profile = builder.create_optimization_profile()
+profile.set_shape("input", min=(1,3,224,224), opt=(8,3,224,224), max=(32,3,224,224))
+config.add_optimization_profile(profile)
+
+engine = builder.build_engine(network, config)
+with open("model.plan", "wb") as f:
+    f.write(engine.serialize())
+\end{lstlisting}
+
+
+
 \paragraph{ONNX Runtime}
 
 \subsection{LLM storage strategies}

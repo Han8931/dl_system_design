@@ -1,0 +1,111 @@
+\section{GPU Basics Focused on Registers}
+
+\subsection{Big Picture}
+\begin{itemize}
+\item \textbf{CPU}: a few powerful cores, great at branching and latency-sensitive work.
+\item \textbf{GPU}: thousands of simpler cores designed for the \emph{same} operation over lots of data (SIMT: single-instruction, multiple-threads).
+\item You launch a \textbf{kernel} (a small function) that runs in parallel across many threads.
+\end{itemize}
+
+\subsection{Execution Model}
+\begin{itemize}
+\item Threads are organized as: \textbf{Grid} \$\rightarrow\$ \textbf{Blocks} \$\rightarrow\$ \textbf{Threads}.
+\item 32 threads form a \textbf{warp}; a warp issues one instruction at a time across its threads.
+\item Hardware groups of cores are called \textbf{SMs} (Streaming Multiprocessors). Each SM runs many warps concurrently and time-slices to hide memory latency.
+\end{itemize}
+
+\subsection{Memory Hierarchy (fastest to slowest)}
+\begin{itemize}
+\item \textbf{Registers} (on-chip, per-thread): fastest, tiny, private to one thread.
+\item \textbf{Shared memory / L1} (on-chip, per-block): fast scratchpad shared by threads in a block.
+\item \textbf{L2 cache} (on-chip, device-wide).
+\item \textbf{Global memory} (VRAM/HBM, off-chip): very large, much slower per access.
+\item (Host RAM via PCIe/NVLink is outside the device; much slower to access from kernels.)
+\end{itemize}
+
+\noindent A compact comparison:
+\begin{center}
+\begin{tabular}{llll}
+\hline
+\textbf{Level} & \textbf{Scope} & \textbf{Speed} & \textbf{Capacity} \\
+\hline
+Registers & per-thread & fastest & very small \\
+Shared mem/L1 & per-block & very fast & small (KBs) \\
+L2 cache & all SMs & fast & MBs \\
+Global (VRAM) & device & slowest (per access) & GBs \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection{What is a Register?}
+\begin{itemize}
+\item A \textbf{register} is a tiny, on-chip storage location assigned to an individual thread to hold temporary values.
+\item The compiler maps your temporary variables (e.g., \verb|t = x + b|) to registers whenever possible.
+\item Registers are \emph{not} directly shared across threads; for sharing, use shared memory or global memory.
+\end{itemize}
+
+\subsection{Why Registers Matter (Fusion Example)}
+Consider the elementwise computation $\;y = \mathrm{ReLU}(x + b)\;$ (with $b$ broadcast as needed). Counting global-memory operations per element:
+
+\paragraph{Unfused (two kernels: add then ReLU).}
+\begin{enumerate}
+\item Read $x[i]$ from global memory.
+\item Read $b[i]$ from global memory.
+\item Compute $t = x[i] + b[i]$.
+\item \emph{Write} $t$ to global memory (temporary array).
+\item \emph{Read} $t$ back from global memory.
+\item Compute $y[i] = \max(t, 0)$.
+\item \emph{Write} $y[i]$ to global memory.
+\end{enumerate}
+Total global-memory ops: $5$ per element (two reads, temp write, temp read, final write).
+
+\paragraph{Fused (one kernel: add+ReLU together).}
+\begin{enumerate}
+\item Read $x[i]$ from global memory.
+\item Read $b[i]$ from global memory.
+\item Compute $t = x[i] + b[i]$ and keep $t$ \textbf{in a register}.
+\item Compute $y[i] = \max(t, 0)$ while $t$ is still in the register.
+\item \emph{Write} $y[i]$ once to global memory.
+\end{enumerate}
+Total global-memory ops: $3$ per element (two reads, one write).
+
+\noindent\textbf{Key point:} Keeping the intermediate $t$ in a \emph{register} avoids an extra write+read of a temporary array in global memory, cutting bandwidth and latency.
+
+\subsection{Conceptual Fused Kernel (Per-Thread Pseudocode)}
+\begin{verbatim}
+for (int i = thread\_id; i < N; i += stride) {
+float xi = X\[i];      // global read
+float bi = B\[i];      // global read (may be broadcast-indexed)
+float t  = xi + bi;   // t lives in a REGISTER
+float yi = (t > 0.0f) ? t : 0.0f;
+Y\[i] = yi;            // single global write
+}
+\end{verbatim}
+
+\subsection{Performance Fundamentals}
+\begin{itemize}
+\item \textbf{Coalesced accesses:} threads in a warp should read/write contiguous addresses for efficient memory transactions.
+\item \textbf{Occupancy and latency hiding:} more resident warps per SM hide memory latency. High register usage per thread can \emph{reduce} occupancy.
+\item \textbf{Register pressure & spills:} if a kernel uses too many registers per thread, the compiler may \emph{spill} variables to \`\`local memory'' (which resides in global memory), introducing extra loads/stores.
+\item \textbf{Warp divergence:} if threads in a warp take different branches, execution serializes and slows down.
+\item \textbf{Arithmetic intensity:} more computation per byte fetched (via on-chip reuse in registers/shared memory) typically yields better performance.
+\item \textbf{Kernel fusion:} merging small elementwise ops reduces kernel launches and keeps intermediates in registers.
+\end{itemize}
+
+\subsection{Glossary}
+\begin{itemize}
+\item \textbf{Kernel:} function executed on the GPU by many threads in parallel.
+\item \textbf{Thread / Warp / Block / Grid:} thread is the smallest unit; 32 threads form a warp; many warps form a block; blocks form a grid.
+\item \textbf{SM (Streaming Multiprocessor):} hardware unit that schedules and runs warps.
+\item \textbf{Register:} per-thread, on-chip storage for temporaries (fastest memory).
+\item \textbf{Shared memory:} per-block, on-chip scratchpad shared among threads in a block.
+\item \textbf{Global memory:} device VRAM; large capacity, high latency/bandwidth-limited.
+\item \textbf{Spill:} when register demand exceeds available registers, variables are stored in local/global memory.
+\end{itemize}
+
+\subsection{Takeaways}
+\begin{itemize}
+\item GPUs are fastest when many threads do the same operation on contiguous data.
+\item Keeping intermediates in \textbf{registers} (often via \emph{kernel fusion}) reduces global-memory traffic and kernel-launch overhead.
+\item Balance fusion with register usage; avoid spills and keep accesses coalesced for best performance.
+\end{itemize}
