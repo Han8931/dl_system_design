@@ -124,4 +124,22 @@ with open("model.plan", "wb") as f:
 
 \paragraph{ONNX Runtime}
 
+\textbf{ONNX}, which stands for Open Neural Network Exchange, is an open source format and ecosystem designed for representing and interoperating between different deep learning frameworks. It was created to address the challenge of model portability and compatibility. ONNX is an IR (intermediate representation) and it allows you to represent models trained in some deep learning framework (\eg TensorFlow, PyTorch) in a standardized format easily consumed by other frameworks and it facilitates the exchange of models between different tools and environments. Unlike TensorRT, ONNX Runtime is intended to be hardware-agnostic, meaning it can be used with a variety of hardware accelerators, including CPUs, GPUs, and specialized hardware like TPUs. 
+
 \subsection{LLM storage strategies}
+
+Now we have a compiled model, we need to think about how our service will access it.This step is critical, because boot times can be a nightmare when working with LLMs since it can take a long time to load such large assets into memory.  
+
+Object storage systems break up assets into small franctional bits called objects. They allow us to federate the entire asset across multiple machines and physical memory locations, a powerful tool that powers the clound, and to cheaply store large objects on hardware.  
+
+\paragraph{Fusing} is the process of mounting a bucket to your machine as if it were an external hard drive. 
+
+\subsection{Adaptive request batching}
+\subsection{Flow Control}
+\subsection{Streaming responses}
+\subsection{Feature store}
+\subsection{Retrieval-augmented generation}
+\subsection{LLM service libraries}
+
+\section{Setting up infrastructure}
+\subsection{Provisioning clusters}
