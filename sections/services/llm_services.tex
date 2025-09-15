@@ -161,35 +161,38 @@ A typical API will accept and process requests in the order they are received, p
 
 \paragraph{Why power of 2 is better}
 
-\begin{enumerate}
-	\item Computers do work in fixed chunks: GPUs (and CPUs) prefer doing work in evenly sized blocks. When your numbers line up with those blocks, nothing is wasted.
-	\item GPU workers come in packs (warps): On NVIDIA, the scheduler runs threads in groups of 32 (a "warp", is the scheduling unit of 32 threads).
-		\begin{itemize}
-			\item If your batch size is 32, every seat is filled.
-			\item If it's 30, you still launch a warp of 32, but 2 threads sit
-				idle $\to$ tiny waste, repeated many times.
-		\end{itemize}
-	\item Math kernels are cut into tiles (often 8 or 16): Matrix multiplies and attention ops slice work into tiles like 16×16.
-		\begin{itemize}
-			\item If your dimensions (batch, sequence, hidden) are multiples
-				of 16, every tile is full. 
-			\item If not, the edge tiles are partially filled and run
-				slower "remainder" code.
-		\end{itemize}
-	\item Memory is fetched in aligned blocks
-		\begin{itemize}
-			\item GPUs pull data in aligned chunks (e.g., 128/256 bytes).
-			\item When sizes align (multiples of 8/16/32), you get fewer,
-				wider memory transactions $\to$ less time waiting on memory.
-		\end{itemize}
-	\item Powers of 2 happen to fit all the above
-		\begin{itemize}
-			\item Numbers like 16, 32, 64 are divisible by 2, 4, 8, 16 and so on. That means they usually:
-			\item  fill warps (32),
-			\item  fill tiles (8/16),
-			\item  align memory nicely. So they're a safe default that often unlocks the fastest code paths. 
-		\end{itemize}
-\end{enumerate}
+Reference: \href{https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html}{CUDA C++ Best Practices Guide}
+
+https://datascience.stackexchange.com/questions/20179/what-is-the-advantage-of-keeping-batch-size-a-power-of-2
+% \begin{enumerate}
+% 	\item Computers do work in fixed chunks: GPUs (and CPUs) prefer doing work in evenly sized blocks. When your numbers line up with those blocks, nothing is wasted.
+% 	\item GPU workers come in packs (warps): On NVIDIA, the scheduler runs threads in groups of 32 (a "warp", is the scheduling unit of 32 threads).
+% 		\begin{itemize}
+% 			\item If your batch size is 32, every seat is filled.
+% 			\item If it's 30, you still launch a warp of 32, but 2 threads sit
+% 				idle $\to$ tiny waste, repeated many times.
+% 		\end{itemize}
+% 	\item Math kernels are cut into tiles (often 8 or 16): Matrix multiplies and attention ops slice work into tiles like 16×16.
+% 		\begin{itemize}
+% 			\item If your dimensions (batch, sequence, hidden) are multiples
+% 				of 16, every tile is full. 
+% 			\item If not, the edge tiles are partially filled and run
+% 				slower "remainder" code.
+% 		\end{itemize}
+% 	\item Memory is fetched in aligned blocks
+% 		\begin{itemize}
+% 			\item GPUs pull data in aligned chunks (e.g., 128/256 bytes).
+% 			\item When sizes align (multiples of 8/16/32), you get fewer,
+% 				wider memory transactions $\to$ less time waiting on memory.
+% 		\end{itemize}
+% 	\item Powers of 2 happen to fit all the above
+% 		\begin{itemize}
+% 			\item Numbers like 16, 32, 64 are divisible by 2, 4, 8, 16 and so on. That means they usually:
+% 			\item  fill warps (32),
+% 			\item  fill tiles (8/16),
+% 			\item  align memory nicely. So they're a safe default that often unlocks the fastest code paths. 
+% 		\end{itemize}
+% \end{enumerate}
 
 What adaptive batching does is essentially pool requests together over a certain period of time. Once the pool receives the configured maximum batch size or the timer runs out, it will run inference on the entire batch through the model, sending the results back to the individual clients that requested them. Essentially, it's a queue. Setting one up yourself can and will be a huge pain; thankfully, most ML inference services offer this out of the box, and almost all are easy to implement. For example, in BentoML, add \texttt{@bentoml.Runnable.method(batchable=True)} as a decorator to your predict function, and in Triton Inference Server, add \texttt{dynamic\_batching\{\}} at the end of your model definition file.
 
