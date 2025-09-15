@@ -90,7 +90,7 @@ Graph optimization = semantics-preserving rewrites of the op graph (fold, fuse, 
 How it works (typical workflow):
 \begin{enumerate}
 	\item Import your model (usually ONNX; there are parsers and framework bridges).
-	\item Build an optimized engine: TensorRT selects fast kernels (“tactics”), fuses layers, lowers precision (FP16/INT8) if allowed, and specializes to your shapes/hardware.
+	\item Build an optimized engine: TensorRT selects fast kernels ("tactics"), fuses layers, lowers precision (FP16/INT8) if allowed, and specializes to your shapes/hardware.
 	\item Serialize the engine to a .plan file (so you can load it instantly in production).
 	\item Run it via the TensorRT runtime (C++/Python).
 \end{enumerate}
@@ -134,8 +134,40 @@ Object storage systems break up assets into small franctional bits called object
 
 \paragraph{Fusing} is the process of mounting a bucket to your machine as if it were an external hard drive. 
 
+\paragraph{Baking the Model}
+
+Baking is the process of putting your model into the Docker image. It is considered an \textit{anti-pattern}. 
+\begin{itemize}
+	\item Gigantic images: every update means pushing/pulling multi-GB layers → slow CI/CD, slow Kubernetes rollouts, higher storage costs.
+	\item Tight coupling: a new model version requires a full image rebuild and redeploy (harder A/B tests, slower rollbacks, no "one image, many models").
+	\item Poor caching: one byte change in weights invalidates a huge layer; your build cache won't help much.
+	\item Security issue
+\end{itemize}
+
+\paragraph{Hybrid: download once, reuse many}
+
+Download the model at boot time but store it in a volume that is mounted at boot time. While this doesn't help at all with the first deployment in a region, it does substantially help any new instances, as they can simply mount this same volume and have the model available to load without having to download. 
+
+\begin{itemize}
+	\item At boot (when the service starts up), your service (or an init step) pulls the model from S3/MinIO/HF/etc.
+	\item It stores the files on a persistent volume that's mounted into the container.
+	\item Subsequent pods/containers on the same node (or across nodes if using a shared RWX volume) just mount the volume—no re-download.
+	\item You keep your app image small and decouple model updates from image builds.
+\end{itemize}
+
+
 \subsection{Adaptive request batching}
+A typical API will accept and process requests in the order they are received, processing them immediately and as quickly as possible. However, anyone who's trained a ML model has come to realize that there are mathematical and computational advantages to running inference in batches of powers of 2 (16, 32, 64, etc), particularly when GPUs are involved, where we can take advantage of better memory alignment or vectorized instructions parallelizing computations across the GPU cores.  
+
+What adaptive batching does is essentially pool requests together over a certain period of time. Once the pool receives the configured maximum batch size or the timer runs out, it will run inference on the entire batch through the model, sending the results back to the individual clients that requested them. Essentially, it's a queue. Setting one up yourself can and will be a huge pain; thankfully, most ML inference services offer this out of the box, and almost all are easy to implement. For example, in BentoML, add \texttt{@bentoml.Runnable.method(batchable=True)} as a decorator to your predict function, and in Triton Inference Server, add \texttt{dynamic\_batching {}} at the end of your model definition file.
+
+If that sounds easy, it is. Typically, you don't need to do any further finessing, as the defaults tend to be very practical. That said, if you are looking to maximize every bit of efficiency possible in the system, you can often set a maximum batch size, which will tell the batcher to run once this limit is reached, or a batch delay, which does the same thing but for the timer. Increasing either will result in longer latency but likely better throughput, so typically these are only adjusted when your system has plenty of latency budget.
+
+Overall, the benefits of adaptive batching include better use of resources and higher throughput at the cost of a bit of latency. This is a valuable trade-off, and we recommend giving your product the latency bandwidth to include this feature. In our experience, optimizing for throughput leads to better reliability and scalability and thus greater customer satisfaction. Of course, when latency times are extremely important or traffic is few and far between, you may rightly forgo this feature.
+
+
 \subsection{Flow Control}
+
 \subsection{Streaming responses}
 \subsection{Feature store}
 \subsection{Retrieval-augmented generation}
