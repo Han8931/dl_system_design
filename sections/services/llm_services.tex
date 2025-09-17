@@ -157,6 +157,7 @@ Download the model at boot time but store it in a volume that is mounted at boot
 
 
 \subsection{Adaptive request batching}
+
 A typical API will accept and process requests in the order they are received, processing them immediately and as quickly as possible. However, anyone who's trained a ML model has come to realize that there are mathematical and computational advantages to running inference in batches of powers of 2 (16, 32, 64, etc), particularly when GPUs are involved, where we can take advantage of better memory alignment or vectorized instructions parallelizing computations across the GPU cores.  
 
 \paragraph{Why power of 2 is better}
@@ -194,17 +195,117 @@ https://datascience.stackexchange.com/questions/20179/what-is-the-advantage-of-k
 % 		\end{itemize}
 % \end{enumerate}
 
-What adaptive batching does is essentially pool requests together over a certain period of time. Once the pool receives the configured maximum batch size or the timer runs out, it will run inference on the entire batch through the model, sending the results back to the individual clients that requested them. Essentially, it's a queue. Setting one up yourself can and will be a huge pain; thankfully, most ML inference services offer this out of the box, and almost all are easy to implement. For example, in BentoML, add \texttt{@bentoml.Runnable.method(batchable=True)} as a decorator to your predict function, and in Triton Inference Server, add \texttt{dynamic\_batching\{\}} at the end of your model definition file.
+What adaptive batching does is essentially pool requests together over a certain period of time. Once the pool receives the configured maximum batch size or the timer runs out, it will run inference on the entire batch through the model, sending the results back to the individual clients that requested them. Essentially, it's a queue. Setting one up yourself can and will be a huge pain; thankfully, most ML inference services offer this out of the box, and almost all are easy to implement. For example, in \textbf{BentoML}, add \texttt{@bentoml.Runnable.method(batchable=True)} as a decorator to your predict function, and in \textbf{Triton Inference Server}, add \texttt{dynamic\_batching\{\}} at the end of your model definition file.
 
 If that sounds easy, it is. Typically, you don't need to do any further finessing, as the defaults tend to be very practical. That said, if you are looking to maximize every bit of efficiency possible in the system, you can often set a maximum batch size, which will tell the batcher to run once this limit is reached, or a batch delay, which does the same thing but for the timer. Increasing either will result in longer latency but likely better throughput, so typically these are only adjusted when your system has plenty of latency budget.
 
 Overall, the benefits of adaptive batching include better use of resources and higher throughput at the cost of a bit of latency. This is a valuable trade-off, and we recommend giving your product the latency bandwidth to include this feature. In our experience, optimizing for throughput leads to better reliability and scalability and thus greater customer satisfaction. Of course, when latency times are extremely important or traffic is few and far between, you may rightly forgo this feature.
 
-
 \subsection{Flow Control}
+Rate limiters and access keys are critical protections for an API, especially one sitting in front of an expensive LLM. Rate limiters control the number of requests a client can make to an API within a specified time, which helps protect the API server from abuse, such as distributed denial of service (DDoS) attacks, where an attacker makes numerous requests simultaneously to overwhelm the system and hinder its function.  
+
+Rate limiters can also protect the server from bots that make numerous automated requests in a short span of time. This helps manage the server resources optimally so the server is not exhausted due to unnecessary or harmful traffic. They are also useful for managing quotas, thus ensuring all users have fair and equal access to the API's resources. By preventing any single user from using excessive resources, the rate limiter ensures the system functions smoothly for all users. 
+
+All in all, rate limiters are an important mechanism for controlling the flow of your LLM's system processes. They can play a critical role in dampening bursty workloads and preventing your system from getting overwhelmed during autoscaling and rolling updates, especially when you have a rather large LLM with longer deployment times. Rate limiters can take several forms, and the one you choose will be dependent on your use case. 
+
+\begin{commentbox}{Types of rate limiters}
+\begin{itemize}
+	\item Fixed window
+	\item Sliding window log
+	\item Token bucket
+	\item Leaky bucket
+\end{itemize}
+\end{commentbox}
+
+A rate limiter can be applied at multiple levels, from the entire API to individual client requests to specific function calls. 
+
+\begin{lstlisting}[language=Python]
+from typing import Optional
+
+from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi.security import APIKeyHeader
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+# ----- Config ---------------------------------------------------------------
+# In real apps, load from a DB or env/secret manager.
+VALID_KEYS = {"1234567abcdefg"}
+
+# Displayed in Swagger UI as the auth "scheme" name
+api_key_header = APIKeyHeader(name="X-API-Key", scheme_name="APIKey", auto_error=False)
+
+# Prefer per-key limiting; fall back to client IP (useful when no key provided)
+def rate_key(request: Request) -> str:
+    key = request.headers.get("X-API-Key")
+    return f"key:{key}" if key else f"ip:{request.client.host}"
+
+# Use in-memory storage for single-process dev.
+# For multi-workers/replicas, switch to: storage_uri="redis://redis:6379/0"
+limiter = Limiter(key_func=rate_key, storage_uri="memory://")
+
+# ----- App setup ------------------------------------------------------------
+app = FastAPI(title="API-Key + Rate Limit Example")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# If running behind a reverse proxy/load balancer, trust X-Forwarded-*.
+# In production, replace ["*"] with your proxy host/IP(s).
+
+# ----- Auth dependency ------------------------------------------------------
+async def require_api_key(api_key: Optional[str] = Depends(api_key_header)) -> str:
+    """
+    Validates the X-API-Key header against our allow-list.
+    Returns the key (or user id associated with it) for downstream use.
+    """
+    if not api_key or api_key not in VALID_KEYS:
+        # RFC-friendly header (helps some clients know how to auth)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+            headers={"WWW-Authenticate": "APIKey"},
+        )
+    return api_key
+
+# ----- Routes ---------------------------------------------------------------
+@app.get("/health", include_in_schema=False)
+async def health() -> dict:
+    return {"ok": True}
+
+@app.get("/hello")
+@limiter.limit("5/minute")            # per-key if present; else per-IP
+async def hello(request: Request, api_key: str = Depends(require_api_key)):
+    # SlowAPI needs `request`; dependency injects validated `api_key`.
+    return {"message": "Hello World"}
+
+# Optional: run directly with `python main.py`
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+\end{lstlisting}
+\begin{itemize}
+	\item You (the API owner) issue a unique key (\ie \texttt{VALID\_KEYS}) to each user/app.
+	\item The client keeps that key and sends it with every request.
+	\item Because the client passes the key in an HTTP header. Your example uses an \texttt{X-API-Key} header via \texttt{APIKeyHeader}.
+	\item The dependency \texttt{require\_api\_key(...)} reads the header, checks it against \texttt{VALID\_KEYS}, and returns 401 if it's missing/invalid.
+	\item The rate limiter's \texttt{key\_func} (\texttt{rate\_key}) also reads the same header to bucket requests per key.
+\end{itemize}
+To test in SwaggerUI:
+\begin{itemize}
+	\item Click Authorize.
+	\item You'll see a field for APIKey (because APIKeyHeader is used).
+	\item Paste ``1234567abcdefg'' and authorize
+\end{itemize}
 
 \subsection{Streaming responses}
+
 \subsection{Feature store}
+When it comes to running ML models in production, feature stores really simplify the inference process. We first introduced these in chapter 3, but as a recap, feature stores establish a centralized source of truth. They answer crucial questions about your data:
+
+Who is responsible for the feature? What is its definition? Who can access it? Let's take a look at setting one up and querying the data to get a feel for how they work. We'll be using Feast, which is open source and supports a variety of backends. To get started, let us pip install feast and then run the init command in your terminal to set up a project, like so:
+
+The app we are building is a question-and-answer service. Q\&A services can greatly benefit from a feature store's data governance tooling. For example, point-in-time joins help us answer questions like "Who is the president of x?" where the answer is expected to change over time. Instead of querying just the question, we query the question with a timestamp, and the point-in-time join will return whatever the answer to the question was in our database at that point in time. In the next listing, we pull a Q\&A dataset and store it in a parquet format in the data directory of our Feast project.
+
 \subsection{Retrieval-augmented generation}
 \subsection{LLM service libraries}
 
