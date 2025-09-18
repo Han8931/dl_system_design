@@ -297,6 +297,9 @@ To test in SwaggerUI:
 	\item Paste ``1234567abcdefg'' and authorize
 \end{itemize}
 
+\paragraph{LiteLLM} LLM proxy server
+
+
 \subsection{Streaming responses}
 
 \subsection{Feature store}
@@ -304,10 +307,115 @@ When it comes to running ML models in production, feature stores really simplify
 
 Who is responsible for the feature? What is its definition? Who can access it? Let's take a look at setting one up and querying the data to get a feel for how they work. We'll be using Feast, which is open source and supports a variety of backends. To get started, let us pip install feast and then run the init command in your terminal to set up a project, like so:
 
-The app we are building is a question-and-answer service. Q\&A services can greatly benefit from a feature store's data governance tooling. For example, point-in-time joins help us answer questions like "Who is the president of x?" where the answer is expected to change over time. Instead of querying just the question, we query the question with a timestamp, and the point-in-time join will return whatever the answer to the question was in our database at that point in time. In the next listing, we pull a Q\&A dataset and store it in a parquet format in the data directory of our Feast project.
+The app we are building is a question-and-answer service. Q\&A services can greatly benefit from a feature store's data governance tooling. For example, point-in-time joins help us answer questions like "Who is the president of x?" where the answer is expected to change over time. Instead of querying just the question, we \textit{query the question with a timestamp}, and the point-in-time join will return whatever the answer to the question was in our database at that point in time. In the next listing, we pull a Q\&A dataset and store it in a parquet format in the data directory of our Feast project.
+\begin{lstlisting}[language=Python]
+import pandas as pd
+from datasets import load_dataset
+import datetime
+ 
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer("all-MiniLM-L6-v2")
+ 
+def save_qa_to_parquet(path):
+    squad = load_dataset("squad", split="train[:5000]")   
+    ids = squad["id"]                            
+    questions = squad["question"]
+    answers = [answer["text"][0] for answer in squad["answers"]]
+    qa = pd.DataFrame(          
+        zip(ids, questions, answers),
+        columns=["question_id", "questions", "answers"],
+    )
+    qa["embeddings"] = model.encode(questions) # feature
+    qa["created"] = utcnow() # ingest time
+    qa["datetime"] = qa["created"].dt.floor("h") # Event time (when the new fact becomes true)
+    qa.to_parquet(path) # offline store file
+ 
+if __name__ == "__main__":
+    path = "./data/qa.parquet"
+    save_qa_to_parquet(path)
+\end{lstlisting}
+\begin{itemize}
+	\item \texttt{DataFrame.to\_parquet} in pandas is a method used to write a pandas DataFrame to the binary Parquet file format.
+		\begin{itemize}
+			\item Parquet is a columnar storage format optimized for efficient data storage and retrieval, especially in big data environments.
+		\end{itemize}
+	\item Creating a tiny feature table with:
+		\begin{itemize}
+			\item Entity key: question\_id
+			\item Features: embeddings (and you could treat answers, questions as features for the demo)
+			\item Time columns: datetime (event time), created (ingest time)
+		\end{itemize}
+		
+\end{itemize}
+
+\begin{lstlisting}[language=Python]
+from feast import Entity, FeatureView, Field, FileSource, ValueType
+from feast.types import Array, Float32, String
+from datetime import timedelta
+ 
+path = "./data/qa.parquet"
+ 
+question = Entity(name="question_id", value_type=ValueType.STRING)
+ 
+question_feature = Field(name="questions", dtype=String)
+ 
+answer_feature = Field(name="answers", dtype=String)
+ 
+embedding_feature = Field(name="embeddings", dtype=Array(Float32))
+ 
+questions_view = FeatureView(
+    name="qa",
+    entities=[question],
+    ttl=timedelta(days=1),
+    schema=[question_feature, answer_feature, embedding_feature],
+    source=FileSource(
+        path=path,
+        event_timestamp_column="datetime",
+        created_timestamp_column="created",
+        timestamp_field="datetime",
+    ),
+    tags={},
+    online=True,
+)
+\end{lstlisting}
 
 \subsection{Retrieval-augmented generation}
+
 \subsection{LLM service libraries}
+If you are starting to feel a bit overwhelmed about all the tooling and features you need to implement to create an LLM service, there are several libraries aim to do all of this for you! Some open source libraries of note are \textbf{vLLM} and \textbf{OpenLLM} (by BentoML).
+
+Most of these toolings are still relatively new and under active development, and they are far from feature parity with each other, so pay attention to what they offer.
 
 \section{Setting up infrastructure}
+
+Setting up infrastructure is a critical aspect of modern software development, and we shouldn't expect machine learning to be any different. To ensure scalability, reliability, and efficient deployment of our applications, we need to plan a robust infrastruc- ture that can handle the demands of a growing user base. This is where \textbf{Kubernetes} comes into play.
+
+\textit{Kubernetes, often referred to as k8s, is an open source container orchestration platform that helps automate and manage the deployment, scaling, and management of containerized applications}. It is designed to simplify the process of running and coordinating multiple containers across a cluster of servers, making it easier to scale applications and ensure high availability. We are going to talk a lot about k8s in this chapter, and while you don't need to be an expert, it will be useful to cover some basics to ensure we are all on the same page.
+
+At its core, k8s works by grouping containers into logical units called \textit{pods}, which are the smallest deployable units in the k8s ecosystem. These pods are then scheduled and managed by the k8s control plane (\ie the brain of Kubernetes), which oversees their deployment, scaling, and updates. This control plane consists of several components that collectively handle the orchestration and management of containers. 
+
+\begin{itemize}
+	\item Control Plane
+		\begin{itemize}
+			\item API server: this is the gate to talk to k8s. 
+			\item Scheduler: Decides which worker node will run your pod.
+			\item Controller manager: Watches everything and fixes it if it drifts from your request.
+		\end{itemize}
+	\item Worker Nodes: each node is a computer (physical or virtual). It runs:
+		\begin{itemize}
+			\item Kubelet: The assistant on each node. This talks to the control plane and makes sure the right containers (\ie pod) are running. 
+		\end{itemize}
+\end{itemize}
+
+How it works?
+\begin{itemize}
+	\item You tell Kubernetes: "Run 3 pods of my web app."
+	\item API Server receives the request.
+	\item Scheduler decides where to place pods.
+	\item Controller Manager keeps checking until 3 pods are alive.
+	\item Kubelet on each worker starts the containers.
+	\item Kube-Proxy sets up networking so users can reach your app.
+\end{itemize}
+
 \subsection{Provisioning clusters}
+
