@@ -409,7 +409,7 @@ At its core, k8s works by grouping containers into logical units called \textit{
 
 How it works?
 \begin{itemize}
-	\item You tell Kubernetes: "Run 3 pods of my web app."
+	\item You tell Kubernetes: ``Run 3 pods of my web app.''
 	\item API Server receives the request.
 	\item Scheduler decides where to place pods.
 	\item Controller Manager keeps checking until 3 pods are alive.
@@ -418,4 +418,113 @@ How it works?
 \end{itemize}
 
 \subsection{Provisioning clusters}
+
+The first thing to do when starting any project is to set up a \textit{cluster}. A cluster is a collective of worker machines or nodes where we will host our applications. 
+
+\begin{itemize}
+	\item On GCP: 
+\begin{lstlisting}[language=bash]
+gcloud container clusters create <NAME>
+\end{lstlisting}
+	\item On AWS
+\begin{lstlisting}[language=bash]
+eksctl create cluster
+\end{lstlisting}
+\end{itemize}
+
+
+\begin{itemize}
+	\item Provisioning a cluster is like building an ``empty factory'': control room (control plane), power, network, and a small set of machines (nodes) to start with. In short, it creates and prepares the cluster.
+	\item Node Auto-Provisioning (NAP) is an auto-hire manager that watches your job queue (unschedulable Pods) and, when there aren't enough machines, buys and installs the right new machines automatically—and removes them later when work slows down. In short, it dynamically adds new nodes/pools to an existing cluster (not create the cluster itself).
+\end{itemize}
+
+\subsection{Autoscaling}
+
+One of the big selling points to setting up a k8s cluster is \textit{autoscaling}. Autoscaling is an important ingredient in creating robust production-grade services. The main reason is that \textbf{we never expect any service to receive static request volume}.
+
+\begin{commentbox}{Autoscaling and NAP}
+	Autoscaling can be considered as a family of mechanisms at different layers, and NAP is one specific (infrastructure) member of that family.
+\end{commentbox}
+
+The HPA (horizontal pod autoscaler) watches CPU and memory resources and will tell the deployment service to increase or decrease the number of replicas. 
+
+The first service we'll need is one that can \textbf{collect the GPU metrics}. From this, we have \textit{NVIDIA's Data Center GPU Manager (DCGM)}, which provides a metrics exporter that can export GPU metrics. DCGM exposes a host of GPU metrics, including temperature and power usage, which can create some fun dashboards, but the most useful metrics for autoscaling are utilization and memory utilization. 
+
+From here, the data will go to a service like \textit{Prometheus}. Prometheus is an open source monitoring system used to monitor Kubernetes clusters and the applications running on them. Prometheus collects metrics from various sources and stores them in a time-series database, where they can be analyzed and queried. Prometheus can collect metrics directly from Kubernetes APIs and from applications running on the cluster using a variety of collection mechanisms such as exporters, agents, and sidecar containers. It's essentially an aggregator of services like DCGM, including features like alerting and notification. It also exposes an HTTP API for service for external tooling like Grafana to query and create graphs and dashboards with.
+
+While Prometheus provides a way to store metrics and monitor our service, the metrics aren't exposed to the internals of Kubernetes. For an HPA to gain access, we will need to register yet another service to either the custom metrics API or external metrics API. By default, Kubernetes comes with the \textit{metrics.k8s.io} endpoint that exposes resource metrics, CPU, and memory utilization. To accommodate the need to scale deployments and pods on custom metrics, two additional APIs were introduced: \textit{custom.metrics.k9s.io} and \textit{external.metrics.k8s.io}. There are some limitations to this setup, as currently, only one ``adapter'' API service can be registered at a time for either one. This limitation mostly becomes a problem if you ever decide to change this endpoint from one provider to another.
+
+For this service, Prometheus provides the \textit{Prometheus Adapter}, which works well, but from our experience, it wasn't designed for production workloads. Alternatively, we would recommend \textit{KEDA}. KEDA (Kubernetes Event-Driven Autoscaling) is an open source project that provides event-driven autoscaling for Kubernetes. It offers more flexibility in terms of the types of custom metrics that can be used for autoscaling.
+
+While Prometheus Adapter requires configuring metrics inside a ConfigMap, any metric already exposed through the Prometheus API can be used in KEDA, providing a more streamlined and friendly user experience. It also offers scaling to and from 0, which isn't available through HPAs, allowing you to turn off a service completely if there is no traffic. That said, you can't scale from 0 on resource metrics like CPU and memory and, by extension, GPU metrics, but it is useful when you are using traffic metrics or a queue to scale.
+
+Putting this all together, you'll end up with the architecture shown in figure 6.7. Compared to figure 6.6, you'll notice at the bottom that DCGM is managing our GPU metrics and feeding them into Prometheus Operator. From Prometheus, we can set up external dashboards with tools like Grafana. Internal to k8s, we'll use KEDA to set up a custom.metrics.k9s.io API to return these metrics so we can autoscale based on the GPU metrics. KEDA has several CRDs, one of which is a ScaledObject, which creates the HPA and provides the additional features.
+
+While autoscaling provides many benefits, it's important to be aware of its limitations and potential problems, which are only exacerbated by LLM inference services. Proper configuration of the HPA is often an afterthought for many applications, but it becomes mission-critical when dealing with LLMs. LLMs take longer to become fully operational, as the GPUs need to be initialized and model weights loaded into memory; these aren't services that can turn on a dime, which often can cause problems when scaling up if not properly prepared for. Additionally, if the system scales down too aggressively, it may result in instances being terminated before completing their assigned tasks, leading to data loss or other problems. Lastly, flapping is just such a concern that can arise from incorrect autoscaling configurations. Flapping happens when the number of replicas keeps oscillating, booting up a new service only to terminate it before it can serve any inferences.
+
+\paragraph{Summary} You want Kubernetes to \textbf{add or remove Pods (and maybe nodes) based on GPU load} (\eg how busy the GPU is, how much GPU memory is used).
+\begin{itemize}
+	\item DCGM (NVIDIA): the thermometer for your GPUs. It reads GPU stats (utilization, memory used, temperature, power) and exposes them as metrics.
+	\item Prometheus: the notebook + calculator. It scrapes (collects) those DCGM metrics and stores them so you can query/graph/alert.
+	\item Adapter (KEDA or Prometheus Adapter): the translator for Kubernetes. It takes Prometheus metrics and exposes them to Kubernetes' autoscaling APIs so HPAs can use them.
+		\begin{itemize}
+			\item By default, Kubernetes only knows basic resource metrics (CPU
+				\& memory) via metrics.k8s.io.
+			\item To scale on custom metrics (like GPU utilization), you must
+				expose them via: custom.metrics.k8s.io (object-scoped) or
+				external.metrics.k8s.io (external/global), through one adapter
+				per API (limitation of the design).
+		\end{itemize}
+	\item HPA (Horizontal Pod Autoscaler): the replica dial. It looks at a metric (e.g., GPU utilization) and scales Pods up/down.
+	\item Cluster-level scaling (CA/NAP/Karpenter): the machine buyer. If more Pods need room, these can add nodes (and later remove them). NAP can even create new node *types* if needed.
+\end{itemize}
+
+The flow with GPUs:
+\begin{itemize}
+	\item DCGM exports GPU metrics.
+	\item Prometheus scrapes and stores them.
+	\item KEDA (or Prometheus Adapter) publishes those metrics to Kubernetes as autoscaling metrics.
+	\item HPA reads that metric and scales Pod replicas.
+	\item If Pods don't fit on current nodes, Cluster Autoscaler / NAP may add nodes (and later remove them).
+\end{itemize}
+
+
+\subsection{Rolling Updates}
+
+Rolling updates or rolling upgrades is a strategy that gradually implements the new version of an application to reduce downtime and maximize agility. It works by gradually creating new instances and turning off the old ones, replacing them in a methodical manner. This update approach allows the system to remain functional and accessible to users even during the update process, otherwise known as zero downtime. Rolling updates also make it easier to catch bugs before they have too much effect and rollback faulty deployments. 
+
+Rolling updates is a feature built into k8s and another major reason for its wide-spread use and popularity. Kubernetes provides an automated and simplified way to carry out rolling updates. 
+
+\subsection{Inference Graphs}
+
+Inference graphs are the crème filling of a donut, the muffin top of a muffin, and the toppings on a pizza: they are just phenomenal. Inference graphs allow us to create sophisticated flow diagrams at inference in a resource-saving way. Consider figure 6.8, which shows us the building blocks for any inference graph. 
+
+Generally, any time you have more than one model, it's useful to consider an infer- ence graph architecture. Your standard LLM setup is usually already at least two models: an encoder and the language model itself.
+
+ Usually, when we see LLMs deployed in the wild, these two models are deployed together. You send text data to your system, and it returns generated text. It's often no big deal, but when deployed as a sequential inference graph instead of a packaged ser- vice, we get some added bonuses. First, the encoder is usually much faster than the LLM, so we can split them up since you may only need one encoder instance for every two to three LLM instances. Encoders are so small that this doesn't necessarily help us out that much, but it saves the hassle of redeploying the entire LLM if we decide to deploy a new encoder model version. In addition, an inference graph will set up an individual API for each model, which allows us to hit the LLM and encoder separately.
+
+This is really useful if we have a bunch of data we'd like to preprocess and save in a VectorDB; we can use the same encoder we already have deployed. We can then pull this data and send it directly into the LLM.
+
+The biggest benefit of an inference graph is that it allows us to separate the API and the LLM. The API sitting in front of the LLM is likely to change much more often as you tweak prompts, add features, and fix bugs. The ability to update the API with out having to deploy the LLM will save your team a lot of effort.
+
+Let's now consider figure 6.9, which provides an example inference graph deploy- ment using Seldon. In this example, we have an encoder model, an LLM, a classifier model, and a simple API that combines the results. Whereas we would have to build a container and the interface for each of these models, Seldon creates an orchestrator that handles communication between a user's request and each node in the graph.
+
+\paragraph{Summary} Don't ship your entire AI pipeline as one big black-box service. Instead, split it into small model services and wire them together as a graph at inference time.
+
+\subsection{Monitoring}
+
+\section{Production Challenges}
+
+\subsection{Model updates and retraining}
+\subsection{Load testing}
+\subsection{Troubleshooting poor latency}
+
+One of the biggest bottlenecks when it comes to your model's performance in terms of latency and throughput has nothing to do with the model itself but comes from \textbf{data transmission of the network}. One of the simplest methods to improve this I/O constraint is to \textbf{serialize the data before sending it across the wire}, which can have a large effect on ML workloads where the payloads tend to be larger, including LLMs where prompts tend to be long.
+
+To serialize the data, we utilize a framework known as \textit{Google Remote Procedure Call (gRPC)}. gRPC is an API protocol similar to REST, but instead of sending JSON objects, we \textbf{compress the payloads into a binary serialized format using Protocol Buffers}, also known as \textit{protobufs}. By doing this, we can send more information in fewer bytes, which can easily give us orders of magnitude improvements in latency. Luckily, most inference services will implement gRPC along with their REST counterparts right out of the box, which is extremely convenient since the major hurdle to using gRPC is setting it up. 
+
+A major reason for this convenience is the Seldon V2 Inference Protocol, which is widely implemented. The only hurdle, then, is ensuring our client can serialize and deserialize messages to take advantage of the protocol. In listing 6.13, we show an example client using MLServer to do this. It's a little bit more in depth than your typi- cal curl request, but a closer inspection shows the majority of the complexity is simply converting the data from different types as we serialize and deserialize it.
+
+\subsection{Resource management}
+\subsection{Cost engineering}
 
