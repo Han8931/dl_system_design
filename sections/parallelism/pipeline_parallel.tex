@@ -16,9 +16,9 @@
 
 In pipeline parallelism, the model is divided into $N$ sub-networks, and each sub-network is placed on a different GPU (or sometimes on multiple GPUs if you have many layers). Think of it like an assembly line:
 \begin{itemize}
-	\item Sub-Network 1: Layers $1-k$  
-	\item Sub-Network 2: Layers $(k+1)-m$ 
-	\item Sub-Network 3: Layers$(m+1)-\dots$ 
+	\item Sub-Network 1: Layers $1\sim k$  
+	\item Sub-Network 2: Layers $(k+1)\sim m$ 
+	\item Sub-Network 3: Layers$(m+1)\sim \dots$ 
 	\item and so on.
 \end{itemize}
 
@@ -27,10 +27,17 @@ The input minibatch is then split into smaller micro-batches (smaller pieces of 
 	\item While Stage 1 is processing the next micro-batch, Stage 2 can concurrently work on the intermediate outputs from Stage 1's previous micro-batch.
 \end{itemize}
 
+On each stage, for each microbatch that backpropagates through that stage's layers, the stage adds the microbatch gradients into its local grad buffers:
+
+\begin{center}
+	grads\_stage += dLoss/dParam (microbatch k)
+\end{center}
+Mixed precision usually applies loss scaling before accumulation.
+
 \begin{figure}[t]
 	\centering
 	\includegraphics[scale=0.8]{./images/pipeline.pdf}
-	\caption{The Illustration of the pipeline parallel on two GPUs. As you can see the \textit{bubble} (\ie underutilization) tends to grow as we increase the number of GPUs}
+	\caption{The Illustration of the pipeline parallel on two GPUs. As you can see the \textit{bubble} (\ie underutilization) tends to grow as we increase the number of GPUs. It updates once at the end.}
 \end{figure}
 
 \paragraph{Example:} Imagine a 2-stage pipeline parallel setup (for simplicity):

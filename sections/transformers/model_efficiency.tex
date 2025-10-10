@@ -1,0 +1,21 @@
+\chapter{Model Efficiency}
+
+Similarly, you can understand efficiency of your deep learning regime as consisting of 3 different components.
+\begin{itemize}
+	\item \textbf{Compute}: Time spent on your GPU computing actual floating point operations (FLOPS)
+	\item \textbf{Memory}: Time spent transferring tensors within a GPU
+	\item \textbf{Overhead}: Everything else
+\end{itemize}
+
+Just like with training ML models, knowing what regime you're in allows you to narrow in on optimizations that matters. For example, if you're spending all of your time doing memory transfers (\ie you are in an memory-bandwidth bound regime), then increasing the FLOPS of your GPU won't help. On the other hand, if you're spending all of your time performing big chonky matmuls (\ie a compute-bound regime), then rewriting your model logic into C++ to reduce overhead won't help.
+
+\section{Computation}
+
+One perspective on optimizing deep learning systems is that we'd like to maximize the time in the compute-bound regime. You paid for all of those 312 teraflops, and ideally, you'd get those 312 teraflops. But, in order to get your money's worth out of your expensive matrix multiplication, you need to reduce the amount of time spent in the other parts.
+
+But why the focus on maximizing compute and not say, memory bandwidth? The reason is simple - you can reduce the overhead or memory costs, but you (mostly) can't reduce the computation required without changing the actual operations you're performing.
+
+Exacerbating the difficulty of maximizing compute utilization is the rate at which compute grows compared to memory bandwidth. Take this table on CPU FLOPS doubling times vs. memory bandwidth doubling times
+
+
+
