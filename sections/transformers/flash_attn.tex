@@ -11,6 +11,15 @@ Over the years GPUs have been adding compute capacity (FLOPS) at a faster pace t
 
 It doesn't matter if you can compute at exaFLOPS speeds if there is no data to be processed. These 2 need to be closely aligned, and since the hardware lost that balance we have to make our software compensate for it.
 
+It turns out attention is (on current AI accelerators) memory-bound.
+\begin{itemize}
+	\item Softmax
+	\item Dropout
+	\item Masking
+	\item Matmul
+\end{itemize}
+
+
 
 We argue that a missing principle is making attention algorithms IO-aware – accounting for reads and writes between levels of GPU memory.
 
@@ -66,12 +75,13 @@ The core idea of FlashAttention is to compute over tile with stream and never fo
 
 \section{The streaming (online) softmax trick}
 
-For one output row $i$ (one query token), the softmax over all keys $j=1\ldots N$ is:
+
+For one output row $i$ ($i$-th query token), the softmax over all keys $j=1\ldots N$ is:
 \begin{align*}
 	o_i = \sum_{j=1}^N \frac{e^{s_{ij}}}{\sum_{k=1}^N e^{s_{ik}}} v_j,
 	\quad s_{ij} = \frac{q_i\cdot k_j}{\sqrt{d}} + \text{mask/bias}.
 \end{align*}
-We process keys in chunks (\ie tiles). Maintain per-row running stats:
+To compute how much a particular $i$-th token from the input sequence pays attention to other tokens in the sequence,  you'd need to have all of those scores (\ie denominator) readily available (denoted here by $s_{ij}$) in SRAM. However, SRAM is limited in its capacity. Thus, we process keys in chunks (\ie tiles). Maintain per-row running stats:
 
 \begin{itemize}
 	\item $m_i$: running max score seen so far (for numerical stability)
