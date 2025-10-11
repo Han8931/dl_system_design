@@ -13,7 +13,7 @@ During kernel tuning, the most suitable kernels are chosen from a large collecti
 
 
 \paragraph{Kernel Fusion}
-A \textbf{GPU kernel} is the tiny function that runs on each element. \textbf{Fusion} $=$ do several elementwise ops in one kernel so each element is read from VRAM once, processed in registers, then written back once.
+A GPU kernel is the tiny function that runs on each element. \textbf{Fusion} $=$ do several elementwise ops in one kernel so each element is read from VRAM \footnote{VRAM is technically a type of DRAM, but it is optimized for storing images and video data that the GPU (Graphics Processing Unit) requires for processing various graphics. It is primarily responsible for storing textures, frame buffers, image data, video data, and other graphics-related data \cite{Anshul2024}.} once, processed in registers, then written back once.
 
 \begin{commentbox}{The \texttt{y = ReLU(x + b)} example}
 Assume \texttt{x} and \texttt{b} are the same length (or \texttt{b} is broadcast on the last dim).

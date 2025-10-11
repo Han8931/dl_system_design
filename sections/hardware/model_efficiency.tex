@@ -1,0 +1,131 @@
+\chapter{Model Efficiency}
+
+You can understand efficiency of your deep learning regime as consisting of 3 different components.
+\begin{itemize}
+	\item \textbf{Computation}: Time spent on your GPU computing actual \textit{floating point operations per second (FLOPS)} 
+	\item \textbf{Bandwidth}: Time spent transferring tensors within a GPU
+	\item \textbf{Overhead}: Everything else
+\end{itemize}
+
+\section{Computation}
+
+You can't really shrink the number of operations like multiplies/adds without changing the model/algorithm (\eg smaller layers, pruning, low-rank tricks).
+
+But you can often shrink time by reducing fewer memory trips, better packing, fusing steps, batching requests, and so on. 
+
+Hardware keeps getting faster than it speeds up IO operations. FLOPs (chef speed) roughly double quicker than memory bandwidth.
+
+Suppose your GPU peaks at 300 TFLOPs and 1 TB/s memory bandwidth.
+\begin{itemize}
+	\item To fully use 300 TFLOPs, your \textit{kernels}\footnote{A kernel is a single function the GPU runs in parallel (\eg "do this matmul," "add two tensors," "apply GELU"). Your model is a chain of many kernels.} need ≥ 300 FLOPs per byte (roofline rule: performance ≤ min(peak FLOPs, bandwidth × FLOPs/byte)).
+	\item If your workload only does 50 FLOPs/byte, memory limits you to ~50 TFLOPs no matter how beefy the chefs are—the pantry can't feed them fast enough.
+\end{itemize}
+
+
+What this means for LLMs (simple takeaways):
+\begin{itemize}
+	\item \textbf{Prefill} (big matmuls): often compute-bound → use mixed precision (FP8/16), fuse ops, and batch to keep math units hot.
+	\item \textbf{Decode} (one token at a time): often memory-bound due to KV-cache reads → shrink bytes (KV quantization, MQA/GQA), fuse tiny ops, batch tokens across requests, speculative decoding to raise work per memory fetch.
+	\item Across the board: arrange data contiguously, prefetch, use CUDA graphs/compilers, and avoid tons of micro-kernels.
+\end{itemize}
+
+\section{Bandwidth}
+
+\textit{Bandwidth cost} is the time and energy spent moving data. In deep-learning kernels, that can mean:
+\begin{itemize}
+	\item CPU $\leftrightarrow$ GPU transfers,
+	\item Node $\leftrightarrow$ node transfers (network),
+	\item GPU DRAM $\leftrightarrow$ on-chip compute (global memory $\leftrightarrow$ registers/shared memory (SRAM)).
+\end{itemize}
+Our focus is on the last one. It dominates many GPU operations: moving tensors in and out of GPU DRAM \footnote{\texttt{nvidia-smi} shows up GPU's DRAM, and DRAM is the primary resource of causing CUDA Out of Memory errors.} can be far more expensive than the math itself. That's why memory-bound kernels (little math per byte moved) often run much slower than you'd expect.
+
+\begin{commentbox}{Memory bandwidth cost}
+	Each time you launch a GPU kernel, intermediate results are typically written back to global memory and read again by the next kernel and it is called memory bandwidth cost. If each step does only a tiny bit of math, you're mostly paying for reads/writes and these operations are called \textit{memory-bound operations}. 
+\end{commentbox}
+
+\subsection{Kernel Fusion (Operator Fusion)}
+
+\textit{Kernel fusion} (or Operator fusion) combines multiple ops so intermediates stay on-chip instead of bouncing to DRAM. That cuts global reads/writes and lifts you out of the memory-bound regime.
+
+\begin{commentbox}{Point-wise operation example}
+
+\textit{Point-wise operation} refers to an operation that each output element depends only on the corresponding input element, with no interaction across elements.
+
+There are 4 global accesses.
+\begin{lstlisting}[language=Python]
+x1 = x.cos()   # read x,   write x1
+x2 = x1.cos()  # read x1,  write x2
+\end{lstlisting}
+With fusion (2 global accesses total):
+\begin{lstlisting}[language=Python]
+x2 = x.cos().cos()  # read x once, write x2 once
+\end{lstlisting}
+Cutting global traffic like this is often close to a 2$\times$ speedup for simple pointwise chains.
+
+In \texttt{x.cos()}, for every index \texttt{i}, the kernel computes \texttt{y[i] = cos(x[i])}. There's no neighborhood, no reduction, no matrix multiply - each element is handled in isolation. Let's consider a simple example:
+\end{commentbox}
+
+In short, kernel fusion do several steps in one pass. Instead of: ``do op A $\to$ write result to memory $\to$ read it back $\to$ do op B'', we combine them so data stays on-chip while we keep computing. That avoids slow trips to (global) memory.
+
+Most kernels are limited by memory bandwidth, not raw FLOPs. If we don't have to write/read intermediates, we save bandwidth and time. That's why two separate PyTorch ops are a chance to fuse and speed things up.
+
+One of counterintuitive observation is that the computational costs of \texttt{x.cos().cos()} and \texttt{x.cos()} are similar once fused. This is because, the expensive part is often moving $x$ through memory. If you keep the value in registers and apply cos twice before writing, the extra math is tiny compared to the avoided memory traffic. This is also why GELU vs ReLU are closer in runtime than you'd expect: after fusion, both mostly cost the same memory movement.
+
+There are a couple of caveats that make this a bit tricky. 
+\begin{enumerate}
+	\item The GPU needs to know what's going to happen next when performing the current operation. So, you can't do this optimization in eager-mode, where PyTorch runs operators one operation at a time. 
+	\item We actually need to generate CUDA code for this, which opens up a whole new can of worms.
+\end{enumerate}
+
+
+\begin{commentbox}{Example}
+Think of two "speed limits" on a GPU:
+\begin{enumerate}
+	\item Memory bandwidth — how fast you can move data to/from global memory.
+ 	\item Compute throughput — how fast you can do math.
+\end{enumerate}
+
+On an A100:
+\begin{itemize}
+	\item Bandwidth $\approx$ 1.5 TB/s = $1.5\times 10^{12}$ bytes/s.
+	\item Compute $\approx$ 19.5 TFLOP/s = $19.5\times 10^{12}$ float ops/s.
+	\item A float32 is 4 bytes.
+\end{itemize}
+
+We can only read: $1.5\times 10^{12}$ bytes/s $/ 4$ bytes $\approx$ 375B numbers/s.
+
+For something like $y = 2\times x$, each element:
+\begin{itemize}
+	\item  read 4 bytes ($x$),
+	\item  write 4 bytes ($y$).
+	\item Total 8 bytes per element.
+\end{itemize}
+So max elements/s $\approx 1.5\times 10^{12} / 8 = 187.5$B elems/s.
+
+This operations is memory-bound. Each element does $\approx 1$ flop (a multiply). If you can process at most 187.5B elems/s, that's $\approx 187.5 $GFLOP/s. This is tiny compared to 19.5 TFLOP/s. The math units are mostly waiting on memory.
+
+To use the GPU's compute fully, you need high \textit{arithmetic intensity} \footnote{how much math you do per byte of data moved from main memory.} (many flops per byte), \eg matrix multiplications.
+\end{commentbox}
+
+
+\section{Overhead}
+
+Overhead is everything that isn't real math or moving tensors. For example, time spent in the Python interpreter? Overhead. Time spent in the PyTorch framework? Overhead. Time spent launching CUDA kernels.
+
+This is a problem since, GPUs are insanely fast. If the GPU can do hundreds of trillions of FLOPs per second but Python can only do tens of millions, then any time you spend in Python (or framework layers) is like idling a rocket engine at a red light. For tiny ops, the setup time dominates; the math itself is over in a blink.
+
+If you do lots of small ops (\eg add a few numbers many times), you pay the overhead each time. The GPU's compute is barely used, so your speed is capped by Python/framework/kernal-launch overhead, not by hardware.
+
+
+Practical fixes (what to do):
+\begin{itemize}
+	\item Batch work / make tensors bigger. Fewer, larger ops amortize overhead.
+	\item Fuse ops. Do more math per read/write (\eg fuse activation, bias, scale).
+	\item Vectorize in Python. Replace Python loops with tensor ops; avoid per-element Python.
+	\item Use torch.compile (PyTorch 2+). Lets the compiler capture graphs, fuse, and lower overhead.
+	\item Prefetch/async where possible. Overlap transfers and compute.
+	\item If CPU-bound and tiny arrays: consider NumPy or even C++ for critical loops.
+	\item Custom kernels (\eg Triton/CUDA) when patterns are regular and hot.
+\end{itemize}
+
+
