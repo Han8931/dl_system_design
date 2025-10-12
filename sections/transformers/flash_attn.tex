@@ -1,8 +1,10 @@
 \chapter{Flash Attention}
 
+``\textit{Many approximate attention methods have aimed to reduce the compute and memory requirements of attention. These methods range from sparse-approximation to low-rank approximation, and their combinations. Although these methods reduce the compute requirements to linear or near-linear in sequence length, many of them do not display wall-clock speedup against standard attention and have not gained wide adoption. One main reason is that they focus on FLOP reduction (which may not correlate with wall-clock speed) and tend to ignore overheads from memory access (IO)}'' \cite{dao2022flashattention}.
+
 \begin{itemize}
-	\item    Fast — excerpt from the paper: "We train BERT-large (seq. length 512) 15% faster than the training speed record in MLPerf 1.1, GPT2 (seq. length 1K) 3x faster than baseline implementations from HuggingFace and Megatron-LM, and long-range arena (seq. length 1K-4K) 2.4x faster than baselines."
-	\item Memory-efficient — compared to vanilla attention, which is quadratic in sequence length, O(N²), this method is sub-quadratic/linear in N (O(N)). We'll see later why & how.
+	\item    Fast — excerpt from the paper: "We train BERT-large (seq. length 512) 15\% faster than the training speed record in MLPerf 1.1, GPT2 (seq. length 1K) 3x faster than baseline implementations from HuggingFace and Megatron-LM, and long-range arena (seq. length 1K-4K) 2.4x faster than baselines."
+	\item Memory-efficient — compared to vanilla attention, which is quadratic in sequence length, $O(N^2)$, this method is sub-quadratic/linear in $O(N)$. We'll see later why & how.
 	\item Exact — meaning it's not an approximation of the attention mechanism (like \eg sparse, or low-rank matrix approximation methods) — its outputs are the same as in the "vanilla" attention mechanism.
 	\item IO aware — compared to vanilla attention, flash attention is sentient.
 \end{itemize}
@@ -43,10 +45,10 @@ Overall, such an approach did not only speed up calculations by taking GPU I/O s
 
 In sum,
 \begin{itemize}
-	\item Load a small block of Q and K into SRAM.
-	\item Compute just that block of scores (Q·Kᵀ).
+	\item Load a small block of $Q$ and $K$ into SRAM.
+	\item Compute just that block of scores ($Q\cdot K^T$).
 	\item Do a streaming softmax: keep a running max and sum so softmax stays numerically stable without needing all tokens at once.
-	\item Immediately apply that softmax block to the matching V block and accumulate partial outputs.
+	\item Immediately apply that softmax block to the matching $V$ block and accumulate partial outputs.
 	\item Move to the next tile. When all tiles are processed, you already have the final output—no big attention matrix ever stored.
 \end{itemize}
 This is called an IO-aware algorithm: it minimizes slow memory traffic and maximizes use of the GPU's fast memory.
