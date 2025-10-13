@@ -23,25 +23,36 @@ It turns out attention is (on current AI accelerators) memory-bound.
 
 
 
-We argue that a missing principle is making attention algorithms IO-aware – accounting for reads and writes between levels of GPU memory.
 
-
-That is, modern GPUs have several types of memory:
+Modern GPUs have a strict memory hierarchy:
 \begin{itemize}
 	\item SRAM – fast, on-chip, small
 	\item HBM – slower than SRAM, large size. That's what we usually address as GPU memory.
 \end{itemize}
+Every operation that "does math" must move data from HBM up to SRAM and then write results back. Those transfers are not free. For attention, the cost of reading and writing dominates; the kernels often become bandwidth/IO-bound rather than compute-bound.
 
- To conduct computation, data must be transferred from HBM to SRAM, and this transfer is not overhead-free!
+The problem with the vanilla attention is that attention forms the full score matrix:
+\begin{align*}
+	S = \frac{QK^\top}{\sqrt{d_k}}
+	% \operatorname{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)
+\end{align*}
+There are several issues:
+\begin{itemize}
+	\item Materialization of $S$: $S$ is a $N\times N$ matrix. For long sequences, just storing and moving $S$ overwhelms SRAM capacity and HBM bandwidth.
+	\item SRAM limits: To compute the softmax for one query token $i$, you'd like all scores on chip.
+\end{itemize}
+In short: the IO pattern is wasteful.
 
-The Flash Attention algorithm proposes a method of computing attention in tiles, without explicitly materializing the attention scores tensor. Here, materializing a matrix means that at any given time, the matrix exist in its full shape in memory.
-
-It's easy to see that this matrix requires $O(n^2)$ of memory to store. For large sequence lengths, that's a lot of data. So, if we manage to avoid explicitly materializing this matrix, we can save lots of memory.
+FlashAttention makes attention IO-aware by restructuring computation to minimize reads/writes between HBM and SRAM while staying exact:
+\begin{itemize}
+	\item Tile the sequence: Load small blocks (tiles) of $Q, K$, and $V$ that fit in SRAM. Compute partial $QK^⊤$ for that tile only.
+	\item Online/streaming softmax: For each query row $i$, keep tiny running statistics in SRAM
+	\item Write once: When a row is complete (all tiles processed), write the final output to HBM. You avoid the ($O(N^2)$) intermediate traffic.
+\end{itemize}
 
 However, this matrix is necessary for transformer training as it is a part of backpropagation and gradient calculation. The authors propose that it's better to recalculate this matrix during the backward pass (again without explicit materialization). Not only does this saves lots of memory, but it also provides huge speedups as we don't need to transfer this enormous matrix between different GPU memory types.
 
 Overall, such an approach did not only speed up calculations by taking GPU I/O specifics into account, but also allowed processing huge sequence lengths as memory complexity drops to $O(n)$.
-
 
 In sum,
 \begin{itemize}

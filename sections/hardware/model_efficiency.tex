@@ -17,15 +17,15 @@ Hardware keeps getting faster than it speeds up IO operations. FLOPs (chef speed
 
 Suppose your GPU peaks at 300 TFLOPs and 1 TB/s memory bandwidth.
 \begin{itemize}
-	\item To fully use 300 TFLOPs, your \textit{kernels}\footnote{A kernel is a single function the GPU runs in parallel (\eg "do this matmul," "add two tensors," "apply GELU"). Your model is a chain of many kernels.} need ≥ 300 FLOPs per byte (roofline rule: performance ≤ min(peak FLOPs, bandwidth × FLOPs/byte)).
-	\item If your workload only does 50 FLOPs/byte, memory limits you to ~50 TFLOPs no matter how beefy the chefs are—the pantry can't feed them fast enough.
+	\item To fully use 300 TFLOPs, your \textit{kernels}\footnote{A kernel is a single function the GPU runs in parallel (\eg "do this matmul," "add two tensors," "apply GELU"). Your model is a chain of many kernels.} need $\geq$ 300 FLOPs per byte (roofline rule: performance $\leq$ min(peak FLOPs, bandwidth $\times$ FLOPs/byte)).
+	\item If your workload only does 50 FLOPs/byte, memory limits you to $\sim 50$ TFLOPs no matter how beefy the chefs are-the pantry can't feed them fast enough.
 \end{itemize}
 
 
 What this means for LLMs (simple takeaways):
 \begin{itemize}
-	\item \textbf{Prefill} (big matmuls): often compute-bound → use mixed precision (FP8/16), fuse ops, and batch to keep math units hot.
-	\item \textbf{Decode} (one token at a time): often memory-bound due to KV-cache reads → shrink bytes (KV quantization, MQA/GQA), fuse tiny ops, batch tokens across requests, speculative decoding to raise work per memory fetch.
+	\item \textbf{Prefill} (big matmuls): often compute-bound $\to$ use mixed precision (FP8/16), fuse ops, and batch to keep math units hot.
+	\item \textbf{Decode} (one token at a time): often memory-bound due to KV-cache reads $\to$ shrink bytes (KV quantization, MQA/GQA), fuse tiny ops, batch tokens across requests, speculative decoding to raise work per memory fetch.
 	\item Across the board: arrange data contiguously, prefetch, use CUDA graphs/compilers, and avoid tons of micro-kernels.
 \end{itemize}
 

@@ -1,5 +1,15 @@
 \chapter{Training LLMs: How to generate the generator}
 
+\section{Checkpointing}
+
+During training, autograd needs forward activations (the intermediate tensors produced layer-by-layer) to compute gradients in the backward pass. Keeping all of them can blow up GPU memory—especially with long sequences, big batches, or deep networks.
+
+Idea: don't keep everything. Save only a few checkpoints, and \textbf{recompute} the missing activations on the fly during backward. You trade extra compute for much lower memory.
+
+\subsection{Gradient/Activation Checkpointing}
+
+Checkpointing refers to a strategy that picks a few layers as checkpoints (say after $L_0, L_3, L_6, \dots$). Save only those. In backward, when you need activations inside ($L_3\to L_6$), you re-run the forward from $L_3$ to $L_6$ to recreate them, then compute gradients.
+
 \section{Multi-GPU environments}
 Training is a resource-intensive endeavor. A model that only takes a single GPU to run inference on may take 10 times that many to train if, for nothing else, to parallelize your work and speed things up so you aren't waiting for a thousand years for it to finish training.  
 
