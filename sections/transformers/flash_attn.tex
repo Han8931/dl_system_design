@@ -75,7 +75,9 @@ Given per-head matrices:
 Naive kernels materialize $S$ (size ($N^2$)), apply softmax row-wise, then multiply by $V$.
 Problem: writing/reading ($N^2$) scores to HBM (GPU DRAM) is \textit{memory-bound} and explodes memory as $N$ grows (\eg $4k$ tokens $\to$ $16M (4k^2)$ scores per head).
 
-The core idea of FlashAttention is to compute over tile with stream and never form $S$ in HBM. In other words, do attention in tiles that fit in on-chip SRAM to minimize HBC traffic, and keep only tiny per-row summaries in HBM. For each tile:
+The core idea of FlashAttention is to compute over tiles. If we compute matrix multiplications over small blocks or tiles, we can significantly reduce the amount of memory access.
+
+However, to compute the attention scores, we still have to compute the softmax. To compute the softmax over tiles, we can adopt online softmax and never form $S$ in HBM. In other words, do attention in tiles that fit in on-chip SRAM to minimize HBC traffic, and keep only tiny per-row summaries in HBM. For each tile:
 
 \begin{enumerate}
 	\item Load a block of $Q$ and a block of $K$, $V$ into SRAM.
@@ -86,16 +88,36 @@ The core idea of FlashAttention is to compute over tile with stream and never fo
 	\item Move to the next block of $K/V$ and repeat.
 \end{enumerate}
 
+\begin{figure}[t]
+	\centering
+	\includegraphics[scale=0.45]{./images/flash_attn.png}
+\end{figure}
+\begin{itemize}
+	\item $\frac{M}{4d}$: Note that query, key, and value vectors are $d$-dimensional. We also need to combine them into the $d$-dimensional output vector. To load all four vectors, it has to be $4d$.
+\end{itemize}
+
+
 \section{The streaming (online) softmax trick}
 
+Note that a naive implementation of softmax can suffer from overflow issue, since softmax uses exponentials, and exponentials blow up (or vanish) fast. The standard way to fix this issue is to shift by the max (\ie log-sum-exp trick).
+
+Softmax is shift-invariant:
+\begin{align*}
+	\mathrm{softmax}(x)_i = \mathrm{softmax}(x - c)_i \quad \text{for any constant } c.
+\end{align*}
+Choose $c = m = \max_j x_j$. Define $\tilde{x}_i = x_i - m \le 0$. Then
+\begin{align*}
+	\mathrm{softmax}(x)_i
+	= \frac{e^{x_i - m}}{\sum_j e^{x_j - m}}
+	= \frac{e^{\tilde{x}_i}}{\sum_j e^{\tilde{x}_j}}.
+\end{align*}
 
 For one output row $i$ ($i$-th query token), the softmax over all keys $j=1\ldots N$ is:
 \begin{align*}
 	o_i = \sum_{j=1}^N \frac{e^{s_{ij}}}{\sum_{k=1}^N e^{s_{ik}}} v_j,
 	\quad s_{ij} = \frac{q_i\cdot k_j}{\sqrt{d}} + \text{mask/bias}.
 \end{align*}
-To compute how much a particular $i$-th token from the input sequence pays attention to other tokens in the sequence,  you'd need to have all of those scores (\ie denominator) readily available (denoted here by $s_{ij}$) in SRAM. However, SRAM is limited in its capacity. Thus, we process keys in chunks (\ie tiles). Maintain per-row running stats:
-
+To compute how much a particular $i$-th token from the input sequence pays attention to other tokens in the sequence,  you'd need to have all of those scores (\ie denominator) readily available (denoted here by $s_{ij}$) in SRAM. However, SRAM is limited in its capacity. Thus, we process keys in chunks (\ie tiles). Maintain per-row running stats. In other woreds, We process keys $j=1,\dots,N$ in chunks (tiles). For each row $i$ keep running statistics:
 \begin{itemize}
 	\item $m_i$: running max score seen so far (for numerical stability)
 	\item $\ell_i$: running sum of exp-shifted scores, \ie $\ell_i = \sum e^{s_{ij}-m_i}$
