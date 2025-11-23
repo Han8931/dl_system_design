@@ -18,6 +18,24 @@ When orchestrating multiple GPUs, we need them to communicate with each other to
 
 \section{DualPipe}
 
+DualPipe = bidirectional pipeline + full overlap of forward & backward + extra model copies.
+
+Key pieces:
+
+Bidirectional pipeline scheduling
+
+\begin{itemize}
+	\item In classic pipeline, micro-batches only enter from one end.
+	\item In DualPipe, micro-batches are injected from both ends of the pipeline.
+	\item So each GPU can:
+		\begin{itemize}
+			\item Run forward for some micro-batches coming from the left, and
+			\item Run backward for other micro-batches coming from the right at the same time (interleaved in time). 
+		\end{itemize}
+\end{itemize}
+
+Each GPU is juggling two streams of work: forward for some micro-batches and backward for others, from opposite ends of the pipeline, while communications happen in the background. That's the dual pipeline.
+
 \begin{figure}[t]
 	\centering
 	\includegraphics[scale=0.45]{./images/dualpipe.png}
@@ -30,7 +48,7 @@ Finer-Grained stages: divide each chunk into 4 components:
 	\item MLP(Multi-Layer Perceptron), 
 	\item All-to-all combine(merge output across devices).
 \end{itemize}
- For a backward chunk, the attention and MLP split further into two parts: backward for input($B$) and backward for weights($W$) like Zero Bubble.
+For a backward chunk, the attention and MLP split further into two parts: backward for input($B$) and backward for weights($W$) like Zero Bubble.
 
 Bidirectional pipeline scheduling which feeds micro-batches from both ends of the pipeline simultaneously and a significant portion of communications can be fully overlapped (See the 2 black arrows in following diagram). In order to support bidirectional pipeline scheduling, DualPipe requires keeping two copies of the model parameters. If we have 8 devices with a 8 layers model, in the Zero Bubble Schedule, each device has a corresponding layer. But in the DualPipe Schedule, in order to handle bidirectional pipeline, the device 0 should have model's layer0 and layer7, and the device 7 should have model's layer7 and layer0.
 
