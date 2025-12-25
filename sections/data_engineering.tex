@@ -243,19 +243,36 @@ We need to transform our dataset into something that can be consumed by the LLM.
 
 \subsection{Tokenization}
 The tokenization is often ignored when working with an LLM through an API, but it is actually vitally important for every subsequent step, and it affects the LLM's performance significantly. 
+Tokenization defines how raw text is decomposed into discrete units (tokens), which are then mapped to integer IDs and processed by the model. Because the model operates exclusively on these token sequences, the tokenizer effectively determines what linguistic patterns the model can represent efficiently.
+A well-designed tokenizer improves computational efficiency, maximizes effective context utilization, and reduces semantic fragmentation, thereby directly influencing both the quality and reliability of downstream model outputs.
 
-\paragraph{Word-based}
-Word-based tokenizers most commonly split on whitespace, but there are other methods like using regex, dictionaries, or punctuation. 
-
-\paragraph{Character-based}
-Character-based encoding methods are the most straightforward and easiest to implement since we split on the UTF-8 character encodings. However, it comes with a major loss of information and fails to keep relevant syntax, semantics, or morphology (morpheme like prefix and suffixes) of the text. 
-
-\paragraph{Subword-based}
-Subword-based tokenizers have proven to be the best option so far. 
+Key concepts:
 \begin{itemize}
-	\item BPE
-	\item WordPiece
-	\item SentencePiece
+	\item character vs word vs subword:
+		\begin{itemize}
+			\item Character tokenizers split into single Unicode codepoints; simple but inefficient for long-range semantics.
+			\item Word tokenizers split on whitespace/punctuation; fast but poor for rare words and morphology.
+			\item Subword tokenizers (BPE, WordPiece, SentencePiece) balance vocabulary size and OOV(Out of vocabulary) handling and are the most common for modern LLMs.
+		\end{itemize}
+	\item Special tokens: reserve tokens for padding, beginning/end-of-sequence, unknowns, separators, and task-specific markers. Ensure consistency between tokenizer and model.
+	\item Offsets and alignment: maintain offset mappings (token -> character span) when you need to map model outputs back to original text (useful for evaluation, annotation, highlighting).
+	\item Token limits and chunking: handle long documents by sliding windows, overlapping chunks, or hierarchical encoders. Decide on truncation strategy (head, tail, or balanced) based on task.
+	\item Determinism & reproducibility: fix preprocessing (lowercasing, stripping, normalization), and save tokenizer vocab + merges to reproduce training and inference behavior.
+\end{itemize}
+
+Practical tips:
+\begin{itemize}
+	\item Use a byte-level BPE or SentencePiece for multilingual robustness and reproducibility.
+	\item Tokenize and measure token distribution early to size your context windows and batch planning.
+	\item Cache tokenized datasets (on disk or in memory) to speed up repeated training/evaluation runs.
+	\item When fine-tuning, prefer the tokenizer that matches the pretrained weights to avoid embedding mismatches; if you must extend the vocab, initialize new embeddings carefully and validate downstream performance.
+\end{itemize}
+
+Common libraries:
+\begin{itemize}
+	\item \href{https://github.com/huggingface/tokenizers}{Hugging Face Tokenizers} : A de facto standard tokenizer that offers a full-featured Python implementation for research workflows, alongside a highly optimized Rust implementation for production environments.
+	\item \href{https://github.com/google/sentencepiece}{sentencepiece}  : Google's standalone C++ based library for sentencepiece
+	\item \href{https://github.com/openai/tiktoken}{tiktoken} : OpenAI's fast and efficient BPE tokenizer for GPT-family models
 \end{itemize}
 
 \subsection{Embeddings}
