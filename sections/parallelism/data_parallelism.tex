@@ -61,5 +61,78 @@ Basic Terms:
 \end{enumerate}
 
 
+\section{DDP vs DataParallel}
 
+In PyTorch there are two common ways to use multiple GPUs:
+
+\begin{itemize}
+    \item \textbf{\texttt{nn.DataParallel}}: ``Single process, many GPUs, GPU0 is the boss.''
+    \item \textbf{\texttt{DistributedDataParallel} (DDP)}: ``One process per GPU, talk via all-reduce (NCCL).''
+\end{itemize}
+
+In practice, \texttt{nn.DataParallel} is easy to use but inefficient and considered outdated for serious training. \texttt{DistributedDataParallel} is the recommended approach, especially for large models and LLMs.
+
+\subsection{Mental Model}
+
+\subsubsection{\texttt{nn.DataParallel}}
+
+\begin{itemize}
+    \item There is \textbf{one Python process} and one ``master'' model copy on GPU0.
+    \item For each forward pass:
+    \begin{enumerate}
+        \item The input batch is split across GPUs.
+        \item The model on GPU0 is \emph{replicated} onto the other GPUs.
+        \item Forward and backward are run on each GPU.
+        \item Gradients are gathered back to GPU0, summed, and \verb|optimizer.step()| is applied on GPU0's parameters.
+    \end{enumerate}
+    \item GPU0 becomes a bottleneck:
+    \begin{itemize}
+        \item It hosts the master model.
+        \item It handles scatter/gather and the optimizer step.
+    \end{itemize}
+    \item Everything happens inside a single Python process, so the Python GIL can also limit scaling.
+\end{itemize}
+
+\subsubsection{\texttt{DistributedDataParallel} (DDP)}
+
+\begin{itemize}
+    \item There is \textbf{one process per GPU} (or per GPU per node).
+    \item Each process:
+    \begin{itemize}
+        \item Owns a model replica on its GPU.
+        \item Receives a shard of the global batch.
+    \end{itemize}
+    \item After \verb|loss.backward()|:
+    \begin{itemize}
+        \item Gradients are \textbf{averaged across processes} via an all-reduce operation (typically NCCL).
+        \item Each process then calls \verb|optimizer.step()| locally using the synchronized gradients.
+    \end{itemize}
+    \item There is no single central bottleneck; synchronization is done in a distributed manner.
+\end{itemize}
+
+\subsection{Practical Differences}
+
+\begin{center}
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Aspect} & \textbf{\texttt{nn.DataParallel}} & \textbf{\texttt{DistributedDataParallel}} \\
+\hline
+Processes & 1 & 1 per GPU \\
+\hline
+Model copies & Replicated each forward & One static replica per process \\
+\hline
+Gradient sync & Gather on GPU0 & All-reduce (NCCL) \\
+\hline
+Python GIL bottleneck & Yes & No (multi-process) \\
+\hline
+Multi-node support & No & Yes \\
+\hline
+Performance / scaling & Poor for large models / many GPUs & Good, recommended \\
+\hline
+Recommended for training & No & Yes \\
+\hline
+\end{tabular}
+\end{center}
+
+For large-scale ML and LLM training/fine-tuning, \texttt{DistributedDataParallel} is the default choice.
 
