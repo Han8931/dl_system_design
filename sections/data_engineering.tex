@@ -244,23 +244,80 @@ We need to transform our dataset into something that can be consumed by the LLM.
 \subsection{Tokenization}
 The tokenization is often ignored when working with an LLM through an API, but it is actually vitally important for every subsequent step, and it affects the LLM's performance significantly. 
 
-\paragraph{Word-based}
-Word-based tokenizers most commonly split on whitespace, but there are other methods like using regex, dictionaries, or punctuation. 
+Tokenization defines how raw text is decomposed into discrete units (tokens), which are then mapped to integer IDs and processed by the model. Because the model operates exclusively on these token sequences, the tokenizer effectively determines what linguistic patterns the model can represent efficiently.
 
-\paragraph{Character-based}
-Character-based encoding methods are the most straightforward and easiest to implement since we split on the UTF-8 character encodings. However, it comes with a major loss of information and fails to keep relevant syntax, semantics, or morphology (morpheme like prefix and suffixes) of the text. 
+A well-designed tokenizer improves computational efficiency, maximizes effective context utilization, and reduces semantic fragmentation, thereby directly influencing both the quality and reliability of downstream model outputs.
 
-\paragraph{Subword-based}
-Subword-based tokenizers have proven to be the best option so far. 
+Key concepts:
 \begin{itemize}
-	\item BPE
-	\item WordPiece
-	\item SentencePiece
+	\item character vs word vs subword:
+		\begin{itemize}
+			\item Character tokenizers split into single Unicode codepoints; simple but inefficient for long-range semantics.
+			\item Word tokenizers split on whitespace/punctuation; fast but poor for rare words and morphology.
+			\item Subword tokenizers (BPE, WordPiece, SentencePiece) balance vocabulary size and OOV(Out of vocabulary) handling and are the most common for modern LLMs.
+		\end{itemize}
+	\item Special tokens: reserve tokens for padding, beginning/end-of-sequence, unknowns, separators, and task-specific markers. Ensure consistency between tokenizer and model.
+	\item Offsets and alignment: maintain offset mappings (token -> character span) when you need to map model outputs back to original text (useful for evaluation, annotation, highlighting).
+	\item Token limits and chunking: handle long documents by sliding windows, overlapping chunks, or hierarchical encoders. Decide on truncation strategy (head, tail, or balanced) based on task.
+	\item Determinism \& reproducibility: fix preprocessing (lowercasing, stripping, normalization), and save tokenizer vocab + merges to reproduce training and inference behavior.
 \end{itemize}
 
-\subsection{Embeddings}
-Embeddings provide meaning to the vectors generated during tokenization. 
+Practical tips:
+\begin{itemize}
+	\item Use a byte-level BPE or SentencePiece for multilingual robustness and reproducibility.
+	\item Tokenize and measure token distribution early to size your context windows and batch planning.
+	\item Cache tokenized datasets (on disk or in memory) to speed up repeated training/evaluation runs.
+	\item When fine-tuning, prefer the tokenizer that matches the pretrained weights to avoid embedding mismatches; if you must extend the vocab, initialize new embeddings carefully and validate downstream performance.
+\end{itemize}
 
+Common libraries:
+\begin{itemize}
+	\item \href{https://github.com/huggingface/tokenizers}{Hugging Face Tokenizers} : A de facto standard tokenizer that offers a full-featured Python implementation for research workflows, alongside a highly optimized Rust implementation for production environments.
+	\item \href{https://github.com/google/sentencepiece}{sentencepiece}  : Google's standalone C++ based library for sentencepiece
+	\item \href{https://github.com/openai/tiktoken}{tiktoken} : OpenAI's fast and efficient BPE tokenizer for GPT-family models
+\end{itemize}
+
+
+\subsection{Embedding}
+
+While tokenization slices the text, embedding constructs the semantic bridge between human language and machine representation. For LLM practitioners, embeddings are not just about representing words; they are the backbone of Retrieval-Augmented Generation (RAG).
+
+In a production environment, simply ``turning text into numbers'' is insufficient. We must consider the \textbf{architecture of the retrieval pipeline}, \textbf{inference latency}, and \textbf{storage costs}.
+
+\subsubsection{Contextualized Representations}
+Unlike static embeddings (\eg Word2Vec, GloVe) which map a unique token to a fixed vector, modern LLM-based embeddings are \textit{contextual}. The vector representation of a token $t_i$ depends on all other tokens $t_{1\dots n}$ in the sequence.
+
+\begin{itemize}
+    \item \textbf{Pooling Strategies}: To represent a full sentence or document as a single vector (dense vector), we typically extract the output from the final layer of the Transformer.
+    \begin{itemize}
+        \item \texttt{[CLS]} token: Using the vector of the special classification token (common in BERT-family models).
+        \item \texttt{Mean pooling}: Averaging the vectors of all tokens (often yields better semantic representations for clustering).
+    \end{itemize}
+	\item \textbf{Instruction-Tuned Embeddings}: Modern SOTA models (\eg E5, Qwen3-Embedding series) require specific instructions or prefixes to distinguish between the query and the document (\eg adding \texttt{"query: "} or \texttt{"passage: "}).\footnote{Providers often distinguish between symmetric tasks (like ``text-matching'' or ``sentence similarity'') and asymmetric tasks (``retrieval''), releasing separate model variants or prompts for each. This addresses the inherent asymmetry in RAG, where user queries are typically short and implicit, while documents are long and noisy.} Omitting these prompts can significantly degrade retrieval performance.
+
+\end{itemize}
+
+
+\subsubsection{Optimization and Efficiency}
+As vector databases grow, storage and latency become bottlenecks. Two techniques are essential for production scaling:
+
+\begin{enumerate}
+    \item \textbf{Matryoshka Representation Learning (MRL)}: 
+    Newer models (\eg OpenAI's \texttt{text-embedding-3} or Qwen3-Embedding series) are trained such that information is concentrated in lower-index dimensions. As a result, truncating a 4096-dimensional embedding to 2048 or even 1024 dimensions incurs minimal performance degradation, while significantly reducing storage and retrieval costs.
+    \item \textbf{Quantization}: 
+    Converting 32-bit floating-point vectors (FP32) to 8-bit integers (INT8) or even binary makes. While this introduces a small precision loss, it can reduce memory usage by $4\times$ to $32\times$ and significantly speed up similarity calculations.
+\end{enumerate}
+
+\subsubsection{Selecting the Right Model}
+Do not blindly use the default model provided by your cloud provider. Consult the 
+\begin{itemize}
+	\item \href{https://huggingface.co/spaces/mteb/leaderboard}{MTEB (Massive Text Embedding Benchmark)} Leaderboard.
+\end{itemize}
+
+\begin{itemize}
+    \item \textbf{Task Specificity}: If you are building a semantic search engine, look at the \textit{Retrieval} score. If you are doing intent classification, look at the \textit{Clustering} or \textit{Classification} scores.
+    \item \textbf{Sequence Length}: Ensure the model's maximum context length (\eg 512 vs. 8192 tokens) matches your document chunking strategy. Long-context models are preferred for RAG to capture broader document semantics.
+\end{itemize}
 
 
 
