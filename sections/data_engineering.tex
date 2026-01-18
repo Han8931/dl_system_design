@@ -275,9 +275,46 @@ Common libraries:
 	\item \href{https://github.com/openai/tiktoken}{tiktoken} : OpenAI's fast and efficient BPE tokenizer for GPT-family models
 \end{itemize}
 
-\subsection{Embeddings}
-Embeddings provide meaning to the vectors generated during tokenization. 
 
+\subsection{Embeddinga}
+
+While tokenization slices the text, embedding constructs the semantic bridge between human language and machine representation. For LLM practitioners, embeddings are not just about representing words; they are the backbone of Retrieval-Augmented Generation (RAG).
+
+In a production environment, simply "turning text into numbers" is insufficient. We must consider the \textbf{architecture of the retrieval pipeline}, \textbf{inference latency}, and \textbf{storage costs}.
+
+\subsubsection{Contextualized Representations}
+Unlike static embeddings (e.g., Word2Vec, GloVe) which map a unique token to a fixed vector, modern LLM-based embeddings are \textit{contextual}. The vector representation of a token $t_i$ depends on all other tokens $t_{1...n}$ in the sequence.
+
+\begin{itemize}
+    \item \textbf{Pooling Strategies}: To represent a full sentence or document as a single vector (dense vector), we typically extract the output from the final layer of the Transformer.
+    \begin{itemize}
+        \item \texttt{[CLS] token}: Using the vector of the special classification token (common in BERT-family models).
+        \item \texttt{Mean pooling}: Averaging the vectors of all tokens (often yields better semantic representations for clustering).
+    \end{itemize}
+	\item \textbf{Instruction-Tuned Embeddings}: Modern SOTA models (e.g., E5, Qwen3-Embedding series) require specific instructions or prefixes to distinguish between the query and the document (e.g., adding \texttt{"query: "} or \texttt{"passage: "}).\footnote{Providers often distinguish between symmetric tasks (like "text-matching" or "sentence similarity") and asymmetric tasks ("retrieval"), releasing separate model variants or prompts for each. This addresses the inherent asymmetry in RAG, where user queries are typically short and implicit, while documents are long and noisy.} Omitting these prompts can significantly degrade retrieval performance.
+
+\end{itemize}
+
+
+\subsubsection{Optimization and Efficiency}
+As vector databases grow, storage and latency become bottlenecks. Two techniques are essential for production scaling:
+
+\begin{enumerate}
+    \item \textbf{Matryoshka Representation Learning (MRL)}: 
+    Newer models (e.g., OpenAI's \texttt{text-embedding-3} or Qwen3-Embedding series) are trained such that information is concentrated in lower-index dimensions. As a result, truncating a 4096-dimensional embedding to 2048 or even 1024 dimensions incurs minimal performance degradation, while significantly reducing storage and retrieval costs.
+    
+    \item \textbf{Quantization}: 
+    Converting 32-bit floating-point vectors (FP32) to 8-bit integers (INT8) or even binary makes. While this introduces a small precision loss, it can reduce memory usage by 4x to 32x and significantly speed up similarity calculations.
+\end{enumerate}
+
+\subsubsection{Selecting the Right Model}
+Do not blindly use the default model provided by your cloud provider. Consult the 
+\item \href{https://huggingface.co/spaces/mteb/leaderboard}{MTEB (Massive Text Embedding Benchmark)} Leaderboard.
+
+\begin{itemize}
+    \item \textbf{Task Specificity}: If you are building a semantic search engine, look at the \textit{Retrieval} score. If you are doing intent classification, look at the \textit{Clustering} or \textit{Classification} scores.
+    \item \textbf{Sequence Length}: Ensure the model's maximum context length (e.g., 512 vs. 8192 tokens) matches your document chunking strategy. Long-context models are preferred for RAG to capture broader document semantics.
+\end{itemize}
 
 
 
