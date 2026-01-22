@@ -1,5 +1,10 @@
 \chapter{LLM Services: A Practical Guide}
 
+\begin{figure}[h]
+	\centering
+	\includegraphics[scale=0.4]{./images/basic_llm_service.png}
+\end{figure}
+
 \textit{Production} refers to the phase where the model is integrated into live or operational environment to perform its intended tasks or provide services to end users. It's a crucial phase in making the model available for real-world applications and services. In this chapter, we will explore how to package up an LLM into a service or API so that it can take on-demand requests. Then, we will study how to set up a cluster in the cloud where you can deploy this service. 
 
 \section{Creating an LLM service}
@@ -210,10 +215,26 @@ All in all, rate limiters are an important mechanism for controlling the flow of
 
 \begin{commentbox}{Types of rate limiters}
 \begin{itemize}
-	\item Fixed window
-	\item Sliding window log
-	\item Token bucket
-	\item Leaky bucket
+	\item Fixed window: allow a fixed number of requests in a set duration of time.
+		\begin{itemize}
+			\item Problem: Burst at window boundaries:
+				\begin{itemize}
+					\item User makes 100 requests at 12:59 PM
+					\item User makes 100 requests at 1:00 PM
+					\item Result: 200 requests in 1 minute! (violates the spirit of the limit)
+				\end{itemize}
+		\end{itemize}
+	\item Sliding window log: Keep a log of all request timestamps. For each new request, remove timestamps older than the window duration, then check if we're under the limit.
+		\begin{itemize}
+			\item Example: Allow 100 requests per hour
+				\begin{itemize}
+					\item Maintain a list of timestamps: [12:05, 12:10, 12:15, ...]
+					\item New request at 1:20 PM → Remove all timestamps before 12:20 PM
+					\item If remaining count < 100, allow the request
+				\end{itemize}
+		\end{itemize}
+	\item Token bucket: Clients initially have a full bucket of tokens, and with each request, they spend tokens. When the bucket is empty, the requests are blocked. 
+	\item Leaky bucket: Requests enter a queue (bucket). Queue is processed at constant rate. If queue is full, new requests are rejected.
 \end{itemize}
 \end{commentbox}
 
@@ -301,11 +322,12 @@ To test in SwaggerUI:
 
 
 \subsection{Streaming responses}
+Streaming allows us to return the generated text to the user as it is being generated versus all at once at the end. 
 
 \subsection{Feature store}
-When it comes to running ML models in production, feature stores really simplify the inference process. We first introduced these in chapter 3, but as a recap, feature stores establish a centralized source of truth. They answer crucial questions about your data:
+When it comes to running ML models in production, feature stores really simplify the inference process. Feature stores establish a centralized source of truth. They answer crucial questions about your data:
 
-Who is responsible for the feature? What is its definition? Who can access it? Let's take a look at setting one up and querying the data to get a feel for how they work. We'll be using Feast, which is open source and supports a variety of backends. To get started, let us pip install feast and then run the init command in your terminal to set up a project, like so:
+Who is responsible for the feature? What is its definition? Who can access it? Let's take a look at setting one up and querying the data to get a feel for how they work. We'll be using \textsc{Feast}, which is open source and supports a variety of backends. To get started, let us \texttt{pip install feast} and then run the \texttt{init} command in your terminal to set up a project, like so:
 
 The app we are building is a question-and-answer service. Q\&A services can greatly benefit from a feature store's data governance tooling. For example, point-in-time joins help us answer questions like "Who is the president of x?" where the answer is expected to change over time. Instead of querying just the question, we \textit{query the question with a timestamp}, and the point-in-time join will return whatever the answer to the question was in our database at that point in time. In the next listing, we pull a Q\&A dataset and store it in a parquet format in the data directory of our Feast project.
 \begin{lstlisting}[language=Python]
@@ -392,16 +414,22 @@ Setting up infrastructure is a critical aspect of modern software development, a
 
 \textit{Kubernetes, often referred to as k8s, is an open source container orchestration platform that helps automate and manage the deployment, scaling, and management of containerized applications}. It is designed to simplify the process of running and coordinating multiple containers across a cluster of servers, making it easier to scale applications and ensure high availability. We are going to talk a lot about k8s in this chapter, and while you don't need to be an expert, it will be useful to cover some basics to ensure we are all on the same page.
 
-At its core, k8s works by grouping containers into logical units called \textit{pods}, which are the smallest deployable units in the k8s ecosystem. These pods are then scheduled and managed by the k8s control plane (\ie the brain of Kubernetes), which oversees their deployment, scaling, and updates. This control plane consists of several components that collectively handle the orchestration and management of containers. 
+At its core, k8s works by grouping containers into logical units called \textit{pods}, which are the smallest deployable units in the k8s ecosystem. These \textbf{pods are then scheduled and managed by the k8s control plane} (\ie the brain of Kubernetes), which oversees their deployment, scaling, and updates. This control plane consists of several components that collectively handle the orchestration and management of containers. 
 
+\begin{figure}[h]
+	\centering
+	\includegraphics[scale=0.4]{./images/simple_k8s.png}
+\end{figure}
+
+Control Plane Node vs Worker Node:
 \begin{itemize}
-	\item Control Plane
+	\item Control plane nodes are dedicated to running Kubernetes system components that manage the cluster
 		\begin{itemize}
 			\item API server: this is the gate to talk to k8s. 
 			\item Scheduler: Decides which worker node will run your pod.
 			\item Controller manager: Watches everything and fixes it if it drifts from your request.
 		\end{itemize}
-	\item Worker Nodes: each node is a computer (physical or virtual). It runs:
+	\item Worker nodes run your application workloads. Each node is a computer (physical or virtual). It runs:
 		\begin{itemize}
 			\item Kubelet: The assistant on each node. This talks to the control plane and makes sure the right containers (\ie pod) are running. 
 		\end{itemize}
@@ -440,6 +468,12 @@ eksctl create cluster
 
 \subsection{Autoscaling}
 
+\begin{figure}[h]
+	\centering
+	\includegraphics[scale=0.4]{./images/basic_hpa.png}
+	\caption{Basic autoscaling using the in-built k8s HPA. The HPA watches CPU and memory resources and will tell the deployment service to increase or decrease the number of replicas.}
+\end{figure}
+
 One of the big selling points to setting up a k8s cluster is \textit{autoscaling}. Autoscaling is an important ingredient in creating robust production-grade services. The main reason is that \textbf{we never expect any service to receive static request volume}.
 
 \begin{commentbox}{Autoscaling and NAP}
@@ -448,19 +482,40 @@ One of the big selling points to setting up a k8s cluster is \textit{autoscaling
 
 The HPA (horizontal pod autoscaler) watches CPU and memory resources and will tell the deployment service to increase or decrease the number of replicas. 
 
-The first service we'll need is one that can \textbf{collect the GPU metrics}. From this, we have \textit{NVIDIA's Data Center GPU Manager (DCGM)}, which provides a metrics exporter that can export GPU metrics. DCGM exposes a host of GPU metrics, including temperature and power usage, which can create some fun dashboards, but the most useful metrics for autoscaling are utilization and memory utilization. 
+The first service we'll need is one that can \textbf{collect the GPU metrics} for autoscaling. We can use \textit{NVIDIA's Data Center GPU Manager (DCGM)}, which provides a metrics exporter that can export GPU metrics. DCGM exposes a host of GPU metrics, including temperature and power usage, which can create some fun dashboards, but the most useful metrics for autoscaling are utilization and memory utilization. 
 
-From here, the data will go to a service like \textit{Prometheus}. Prometheus is an open source monitoring system used to monitor Kubernetes clusters and the applications running on them. Prometheus collects metrics from various sources and stores them in a time-series database, where they can be analyzed and queried. Prometheus can collect metrics directly from Kubernetes APIs and from applications running on the cluster using a variety of collection mechanisms such as exporters, agents, and sidecar containers. It's essentially an aggregator of services like DCGM, including features like alerting and notification. It also exposes an HTTP API for service for external tooling like Grafana to query and create graphs and dashboards with.
+From here, the data will go to a service like \textit{Prometheus}. Prometheus is an open source monitoring system used to monitor Kubernetes clusters and the applications running on them. Prometheus collects metrics from various sources and stores them in a time-series database, where they can be analyzed and queried. Prometheus can collect metrics directly from Kubernetes APIs and from applications running on the cluster using a variety of collection mechanisms such as exporters, agents, and sidecar containers. \textbf{It's essentially an aggregator of services like DCGM}, including features like alerting and notification. It also exposes an HTTP API for service for external tooling like Grafana to query and create graphs and dashboards with.
 
 While Prometheus provides a way to store metrics and monitor our service, the metrics aren't exposed to the internals of Kubernetes. For an HPA to gain access, we will need to register yet another service to either the custom metrics API or external metrics API. By default, Kubernetes comes with the \textit{metrics.k8s.io} endpoint that exposes resource metrics, CPU, and memory utilization. To accommodate the need to scale deployments and pods on custom metrics, two additional APIs were introduced: \textit{custom.metrics.k9s.io} and \textit{external.metrics.k8s.io}. There are some limitations to this setup, as currently, only one ``adapter'' API service can be registered at a time for either one. This limitation mostly becomes a problem if you ever decide to change this endpoint from one provider to another.
+
+\begin{itemize}
+	\item Prometheus is a time-series database that collects and stores metrics.
+	\item Grafana is a dashboarding and visualization tool that queries Prometheus (and other data sources) to create visual representations.
+\end{itemize}
 
 For this service, Prometheus provides the \textit{Prometheus Adapter}, which works well, but from our experience, it wasn't designed for production workloads. Alternatively, we would recommend \textit{KEDA}. KEDA (Kubernetes Event-Driven Autoscaling) is an open source project that provides event-driven autoscaling for Kubernetes. It offers more flexibility in terms of the types of custom metrics that can be used for autoscaling.
 
 While Prometheus Adapter requires configuring metrics inside a ConfigMap, any metric already exposed through the Prometheus API can be used in KEDA, providing a more streamlined and friendly user experience. It also offers scaling to and from 0, which isn't available through HPAs, allowing you to turn off a service completely if there is no traffic. That said, you can't scale from 0 on resource metrics like CPU and memory and, by extension, GPU metrics, but it is useful when you are using traffic metrics or a queue to scale.
 
-Putting this all together, you'll end up with the architecture shown in figure 6.7. Compared to figure 6.6, you'll notice at the bottom that DCGM is managing our GPU metrics and feeding them into Prometheus Operator. From Prometheus, we can set up external dashboards with tools like Grafana. Internal to k8s, we'll use KEDA to set up a custom.metrics.k9s.io API to return these metrics so we can autoscale based on the GPU metrics. KEDA has several CRDs, one of which is a ScaledObject, which creates the HPA and provides the additional features.
+Putting this all together, you'll end up with the architecture shown in the following figure. You'll notice at the bottom that DCGM is managing our GPU metrics and feeding them into Prometheus Operator. From Prometheus, we can set up external dashboards with tools like Grafana. Internal to k8s, we'll use KEDA to set up a custom.metrics.k9s.io API to return these metrics so we can autoscale based on the GPU metrics. KEDA has several CRDs, one of which is a ScaledObject, which creates the HPA and provides the additional features.
+
+\begin{figure}[h]
+	\centering
+	\includegraphics[scale=0.4]{./images/hpa.png}
+	\caption{Autoscaling based on a custom metric like GPU utilization. }
+	\label{fig:}
+\end{figure}
 
 While autoscaling provides many benefits, it's important to be aware of its limitations and potential problems, which are only exacerbated by LLM inference services. Proper configuration of the HPA is often an afterthought for many applications, but it becomes mission-critical when dealing with LLMs. LLMs take longer to become fully operational, as the GPUs need to be initialized and model weights loaded into memory; these aren't services that can turn on a dime, which often can cause problems when scaling up if not properly prepared for. Additionally, if the system scales down too aggressively, it may result in instances being terminated before completing their assigned tasks, leading to data loss or other problems. Lastly, flapping is just such a concern that can arise from incorrect autoscaling configurations. Flapping happens when the number of replicas keeps oscillating, booting up a new service only to terminate it before it can serve any inferences.
+
+There are essentially five parameters to tune when setting up an HPA: 
+\begin{itemize}
+	\item Target parameter
+	\item Target threshold
+	\item Min pod replicas
+	\item Max pod replicas
+	\item Scaling policies
+\end{itemize}
 
 \paragraph{Summary} You want Kubernetes to \textbf{add or remove Pods (and maybe nodes) based on GPU load} (\eg how busy the GPU is, how much GPU memory is used).
 \begin{itemize}
@@ -488,10 +543,18 @@ The flow with GPUs:
 	\item If Pods don't fit on current nodes, Cluster Autoscaler / NAP may add nodes (and later remove them).
 \end{itemize}
 
+\paragraph{Target Threshold}
+
+The target parameter is the most important metric to consider when ensuring your system is properly configured. Scaling based on GPU utilization is going to be the most common and straightforward path, but the first thing we need to do is ensure the GPU is the actual bottleneck in our service. It's pretty common to see eager young engineers throw a lot of expensive GPUs onto a service but \textbf{forget to include adequate CPU and memory capacity}. CPU and memory will still be needed to handle the API layer, such as taking in requests, handling multiple threads, and communicating with the GPUs. If there aren't enough resources, these layers can quickly become a bottleneck, and your application will be throttled way before the GPU utilization is ever affected, ensuring the system will never actually autoscale. While you could switch the target parameter on the autoscaler, CPU and memory are cheap compared to GPU resources, so it'd be better to allocate more of them for your application.
+
+In addition, there are cases where other metrics make more sense. If your LLM application takes most of its requests from a streaming or batch service, it can be more prudent to scale based on metrics that tell you a DAG is running or an upstream queue is filling up-especially if these metrics give you an early signal and allow you more time to scale up in advance.
+
+Another concern when selecting the metric is its stability. For example, an indi- vidual GPU's utilization tends to be close to either 0\% or 100\%. This can cause problems for the autoscaler, as the metric oscillates between an on and off state, as will its recommendation to add or remove replicas, causing flapping. Generally, flapping is avoided by taking the average utilization across all GPUs running the service. Using the average will stabilize the metric when you have a lot of GPUs, but it could still be a problem when the service has scaled down. If you are still running into problems, you'll want to use an average-over-time aggregation, which will tell you the utilization for each GPU over a time frame—say, the last 5 minutes. For CPU utilization, average-over-time aggregation is built into the Kubernetes HPA and can be set with the horizontal-pod-autoscaler-cpu-initialization-period flag. For custom metrics, you'll need to set it in your metric query (for Prometheus, it would be the \texttt{avg\_over\_time} aggregation function).
+
 
 \subsection{Rolling Updates}
 
-Rolling updates or rolling upgrades is a strategy that gradually implements the new version of an application to reduce downtime and maximize agility. It works by gradually creating new instances and turning off the old ones, replacing them in a methodical manner. This update approach allows the system to remain functional and accessible to users even during the update process, otherwise known as zero downtime. Rolling updates also make it easier to catch bugs before they have too much effect and rollback faulty deployments. 
+\textbf{Rolling updates or rolling upgrades is a strategy that gradually implements the new version of an application to reduce downtime and maximize agility}. It works by \textbf{gradually creating new instances and turning off the old ones}, replacing them in a methodical manner. This update approach allows the system to remain functional and accessible to users even during the update process, otherwise known as zero downtime. Rolling updates also make it easier to catch bugs before they have too much effect and rollback faulty deployments. 
 
 Rolling updates is a feature built into k8s and another major reason for its wide-spread use and popularity. Kubernetes provides an automated and simplified way to carry out rolling updates. 
 
@@ -501,7 +564,7 @@ Inference graphs are the crème filling of a donut, the muffin top of a muffin, 
 
 Generally, any time you have more than one model, it's useful to consider an infer- ence graph architecture. Your standard LLM setup is usually already at least two models: an encoder and the language model itself.
 
- Usually, when we see LLMs deployed in the wild, these two models are deployed together. You send text data to your system, and it returns generated text. It's often no big deal, but when deployed as a sequential inference graph instead of a packaged ser- vice, we get some added bonuses. First, the encoder is usually much faster than the LLM, so we can split them up since you may only need one encoder instance for every two to three LLM instances. Encoders are so small that this doesn't necessarily help us out that much, but it saves the hassle of redeploying the entire LLM if we decide to deploy a new encoder model version. In addition, an inference graph will set up an individual API for each model, which allows us to hit the LLM and encoder separately.
+ Usually, when we see LLMs deployed in the wild, these two models are deployed together. You send text data to your system, and it returns generated text. It's often no big deal, but when deployed as a sequential inference graph instead of a packaged service, we get some added bonuses. First, the encoder is usually much faster than the LLM, so we can split them up since you may only need one encoder instance for every two to three LLM instances. Encoders are so small that this doesn't necessarily help us out that much, but it saves the hassle of redeploying the entire LLM if we decide to deploy a new encoder model version. In addition, an inference graph will set up an individual API for each model, which allows us to hit the LLM and encoder separately.
 
 This is really useful if we have a bunch of data we'd like to preprocess and save in a VectorDB; we can use the same encoder we already have deployed. We can then pull this data and send it directly into the LLM.
 
@@ -516,6 +579,19 @@ Let's now consider figure 6.9, which provides an example inference graph deploy-
 \section{Production Challenges}
 
 \subsection{Model updates and retraining}
+
+Watching your model for silent failures and data drift, but what do you do when you notice the model starts failing?
+
+Many traditional ML implementations that the answer is to simply retrain the model on the latest data and redeploy. And that works well when you are working with a small model.
+
+we aren't going to retrain from scratch, and we likely need to finetune our model, but the reason it doesn't make sense is seen when we ask ourselves just what exactly the latest data is. 
+
+The data we need to finetune the model is extremely important, and so it becomes necessary for us to take a step back and really diagnose the problem. What are the edge cases our model is failing on? What is it still doing well? How exactly have incoming prompts changed? Depending on the answers, we might not need to finetune at all.
+
+ For example, consider a Q\&A bot that is no longer effective at answering current event questions as time goes on. We probably don't want to retrain a model on a large corpus of the latest news articles. Instead, we would get much better results by ensuring our RAG system is up to date. Similarly, there are likely plenty of times that simply tweaking prompts will do the trick.
+
+
+
 \subsection{Load testing}
 \subsection{Troubleshooting poor latency}
 
@@ -527,4 +603,14 @@ A major reason for this convenience is the Seldon V2 Inference Protocol, which i
 
 \subsection{Resource management}
 \subsection{Cost engineering}
+
+It is often paid through longer inference times and extra compute time. In fact, it's been suggested that simply adding "be concise" to your prompt can save you up to 90\% of your costs.
+
+ You'll also save a lot by using text embeddings.
+
+ You also need to consider which model you should use for which task.
+
+You also need to consider which model you should use for which task. Generally, bigger models are better at a wider variety of tasks, but if a smaller model is good enough for a specific job, you'll save a lot by using it.
+
+You'll need to consider the costs of GPUs to use when running. In general, you'll want to use the least amount of GPUs needed to fit the model into memory to reduce the cost of idling caused by bubbles
 

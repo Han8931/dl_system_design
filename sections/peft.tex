@@ -6,8 +6,7 @@ When fine-tuning a neural network for a new task, we adjust its weights $W$ by l
 \begin{align*}
 	W' \;=\; W + \Delta W.
 \end{align*}
-\textit{LoRA} (Low-Rank Adaptation) avoids updating $W$ directly. Motivated by the **intrinsic rank hypothesis**—the idea that task-critical changes lie in a low-dimensional subspace—LoRA parameterizes the update as a low-rank product:
-
+\textit{LoRA} (Low-Rank Adaptation) avoids updating $W$ directly. Motivated by the \textbf{intrinsic rank hypothesis}-the idea that task-critical changes lie in a low-dimensional subspace-LoRA parameterizes the update as a low-rank product:
 \begin{align*}
 	\Delta W \;=\; B A,\qquad W' \;=\; W + BA,
 \end{align*}
@@ -15,6 +14,12 @@ while keeping $W$ frozen. Here $B \in \mathbb{R}^{d\times r}$ and $A \in \mathbb
 
 This factorization dramatically reduces trainable parameters. Instead of learning all $d^2$ entries of $\Delta W$ (for a $d\times d$ weight), LoRA learns only the factors $B$ and $A$, totaling $2dr$ parameters—much smaller when $r \ll d$. (The same idea applies to non-square $W \in \mathbb{R}^{d\times k}$, using $B\in\mathbb{R}^{d\times r}$ and $A\in\mathbb{R}^{r\times k}$, for a cost of $r(d+k)$ instead of $dk$.)
 
+Increasing $r$ usually:
+\begin{itemize}
+	\item Improves task performance (up to a point)
+	\item Costs more memory + compute
+	\item Can overfit more easily on small datasets
+\end{itemize}
 
 \section{QLoRA}
 

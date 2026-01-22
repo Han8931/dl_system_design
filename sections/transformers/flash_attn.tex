@@ -4,7 +4,7 @@
 
 \begin{itemize}
 	\item    Fast — excerpt from the paper: "We train BERT-large (seq. length 512) 15\% faster than the training speed record in MLPerf 1.1, GPT2 (seq. length 1K) 3x faster than baseline implementations from HuggingFace and Megatron-LM, and long-range arena (seq. length 1K-4K) 2.4x faster than baselines."
-	\item Memory-efficient — compared to vanilla attention, which is quadratic in sequence length, $O(N^2)$, this method is sub-quadratic/linear in $O(N)$. We'll see later why & how.
+	\item Memory-efficient — compared to vanilla attention, which is quadratic in sequence length, $O(N^2)$, this method is sub-quadratic/linear in $O(N)$. We'll see later why \& how.
 	\item Exact — meaning it's not an approximation of the attention mechanism (like \eg sparse, or low-rank matrix approximation methods) — its outputs are the same as in the "vanilla" attention mechanism.
 	\item IO aware — compared to vanilla attention, flash attention is sentient.
 \end{itemize}
@@ -150,10 +150,10 @@ classic log-sum-exp fusion with dynamic max shifting keeps numbers well-scaled w
 	\item scores (two tiles): $s=[1,3|0,2]$
 	\item 2-D values:
 		\begin{itemize}
-		  \item (v_1=[1,0])
-		  \item (v_2=[0,2])
-		  \item (v_3=[-1,1])
-		  \item (v_4=[3,1])
+		  \item ($v_1=[1,0]$)
+		  \item ($v_2=[0,2]$)
+		  \item ($v_3=[-1,1]$)
+		  \item ($v_4=[3,1]$)
 		\end{itemize}
 \end{itemize}
 Define $a=e^{-2}\approx0.135335, b=e^{-1}\approx0.367879$.

@@ -2,6 +2,8 @@
 
 \section{Checkpointing}
 
+ef
+
 During training, autograd needs forward activations (the intermediate tensors produced layer-by-layer) to compute gradients in the backward pass. Keeping all of them can blow up GPU memory—especially with long sequences, big batches, or deep networks.
 
 Idea: don't keep everything. Save only a few checkpoints, and \textbf{recompute} the missing activations on the fly during backward. You trade extra compute for much lower memory.

@@ -9,8 +9,7 @@ There isn't more valuable asset than your data. All successful AI and ML initiat
 The most important dataset you will need to collect when training is the model weights of a pretrained model. 
 
 \subsection{Evaluating LLMs}
-When evaluating a model, you will need two things: \Ni a \textit{metric} and \Nii a \textit{dataset}. 
-
+Evaluating a model requires two things: \Ni a \textit{metric} and \Nii a \textit{dataset}. 
 \paragraph{Metrics}
 \begin{itemize}
 	\item ROUGE (Recall-Oriented Understudy for Gisting Evaluation)
@@ -77,20 +76,27 @@ print(details.head())
 # 4        15     Conv1D  0.062197  ...               626.655218   23.727908
 
 \end{lstlisting}
+
+Each layer in your neural network has a weight matrix. When you analyze this matrix, you get a list of numbers called eigenvalues. These eigenvalues reveal how spread out or concentrated the layer's learning is.
  
-The spectral analysis plots evaluate the frequencies of eigenvalues for each layer of a model. These plots tell you whether a model (or layer) looks well-trained and generalizes well or is unstable/poorly conditioned.
-Shape of the Spectrum (How eigenvalues are distributed)
+The spectral analysis plots evaluate the frequencies of eigenvalues for each layer of a model. These plots tell you whether a model (or layer) looks well-trained and generalizes well or is unstable/poorly conditioned. Shape of the Spectrum (How eigenvalues are distributed)
 \begin{itemize}
-	\item Power-law exponent ($\alpha$):
+	\item Power-law exponent ($\alpha$): The Training Quality Score, the power-law exponent of the spectral tail.
 		\begin{itemize}
 			\item Good if between 2 and 6: the layer is well-trained.
 			\item Bad if $\alpha > 6$: layer might be undertrained or over-regularized.
 		\end{itemize}
-	\item Fit quality (Dks):
+	\item Fit quality (Dks): The Reliability Score
 		\begin{itemize}
-			\item Low Dks: spectrum matches the expected ``heavy-tailed'' shape, reliable.
+			\item Low Dks: spectrum matches the expected ``heavy-tailed'' shape, reliable (most eigenvalues are small, but some are very large, and they don't disappear quickly).
 			\item High Dks: poor fit, unstable or unstructured layer.
 		\end{itemize}
+\end{itemize}
+
+Note that 
+\begin{itemize}
+	\item In a light-tailed distribution, big values are rare and drop off fast.
+	\item In a heavy-tailed distribution, big values are not that rare — you keep seeing occasional huge values.
 \end{itemize}
 
 \section{Data for LLMs}
@@ -242,7 +248,7 @@ There are tools to help with the task:
 We need to transform our dataset into something that can be consumed by the LLM. Simply, we need to turn the text into numbers.  
 
 \subsection{Tokenization}
-The tokenization is often ignored when working with an LLM through an API, but it is actually vitally important for every subsequent step, and it affects the LLM's performance significantly. 
+The importance of the tokenization is often ignored, but it plays a central role for every subsequent step for processing information by LLM. 
 
 Tokenization defines how raw text is decomposed into discrete units (tokens), which are then mapped to integer IDs and processed by the model. Because the model operates exclusively on these token sequences, the tokenizer effectively determines what linguistic patterns the model can represent efficiently.
 
@@ -250,11 +256,11 @@ A well-designed tokenizer improves computational efficiency, maximizes effective
 
 Key concepts:
 \begin{itemize}
-	\item character vs word vs subword:
+	\item Char v.s. Word v.s. Subword:
 		\begin{itemize}
-			\item Character tokenizers split into single Unicode codepoints; simple but inefficient for long-range semantics.
-			\item Word tokenizers split on whitespace/punctuation; fast but poor for rare words and morphology.
-			\item Subword tokenizers (BPE, WordPiece, SentencePiece) balance vocabulary size and OOV(Out of vocabulary) handling and are the most common for modern LLMs.
+			\item Character-level tokenizers split texts into single Unicode codepoints. It is simple but inefficient for long-range semantics.
+			\item Word-level tokenizers split on whitespace/punctuation; fast but poor for rare words and morphology.
+			\item Subword-level tokenizers (\eg BPE, WordPiece, SentencePiece) balance vocabulary size and OOV(Out of vocabulary) handling and are the most common for modern LLMs.
 		\end{itemize}
 	\item Special tokens: reserve tokens for padding, beginning/end-of-sequence, unknowns, separators, and task-specific markers. Ensure consistency between tokenizer and model.
 	\item Offsets and alignment: maintain offset mappings (token -> character span) when you need to map model outputs back to original text (useful for evaluation, annotation, highlighting).
@@ -297,19 +303,16 @@ Unlike static embeddings (\eg Word2Vec, GloVe) which map a unique token to a fix
 
 \end{itemize}
 
-
 \subsubsection{Optimization and Efficiency}
 As vector databases grow, storage and latency become bottlenecks. Two techniques are essential for production scaling:
 
 \begin{enumerate}
-    \item \textbf{Matryoshka Representation Learning (MRL)}: 
-    Newer models (\eg OpenAI's \texttt{text-embedding-3} or Qwen3-Embedding series) are trained such that information is concentrated in lower-index dimensions. As a result, truncating a 4096-dimensional embedding to 2048 or even 1024 dimensions incurs minimal performance degradation, while significantly reducing storage and retrieval costs.
-    \item \textbf{Quantization}: 
-    Converting 32-bit floating-point vectors (FP32) to 8-bit integers (INT8) or even binary makes. While this introduces a small precision loss, it can reduce memory usage by $4\times$ to $32\times$ and significantly speed up similarity calculations.
+    \item \textbf{Matryoshka Representation Learning (MRL)}: Newer models (\eg OpenAI's \texttt{text-embedding-3} or Qwen3-Embedding series) are trained such that information is concentrated in lower-index dimensions. As a result, truncating a 4096-dimensional embedding to 2048 or even 1024 dimensions incurs minimal performance degradation, while significantly reducing storage and retrieval costs.
+    \item \textbf{Quantization}: Converting 32-bit floating-point vectors (FP32) to 8-bit integers (INT8) or even binary makes. While this introduces a small precision loss, it can reduce memory usage by $4\times$ to $32\times$ and significantly speed up similarity calculations.
 \end{enumerate}
 
 \subsubsection{Selecting the Right Model}
-Do not blindly use the default model provided by your cloud provider. Consult the 
+Do not blindly use the default model provided by your cloud provider. Check the 
 \begin{itemize}
 	\item \href{https://huggingface.co/spaces/mteb/leaderboard}{MTEB (Massive Text Embedding Benchmark)} Leaderboard.
 \end{itemize}
